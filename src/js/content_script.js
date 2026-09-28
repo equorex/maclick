@@ -39,36 +39,64 @@ const OVERLAY_CSS = `
 let isRecording = false;
 let overlayHost = null;
 
+function positionInNodeList(element, nodeList) {
+  for (let i = 0; i < nodeList.length; i++) {
+    if (element === nodeList[i]) return i;
+  }
+  return -1;
+}
+
+function getSelectorRoot(element) {
+  if (typeof element.getRootNode !== 'function') return document;
+
+  const root = element.getRootNode();
+  if (root && (root.nodeType === Node.DOCUMENT_NODE || root.nodeType === Node.DOCUMENT_FRAGMENT_NODE)) {
+    return root;
+  }
+  return document;
+}
+
 function getSelector(element) {
-  if (!element || element.tagName === 'HTML' || element.tagName === 'BODY') return null;
+  if (!element || element.nodeType !== Node.ELEMENT_NODE) return null;
 
-  const parts = [];
-  let current = element;
+  const root = getSelectorRoot(element);
+  if (!root || typeof root.querySelectorAll !== 'function') return null;
 
-  while (current && current.nodeType === Node.ELEMENT_NODE) {
-    let part = current.tagName.toLowerCase();
-
-    if (current.id) {
-      part += '#' + CSS.escape(current.id);
-      parts.unshift(part);
-      break;
-    }
-
-    const classes = Array.from(current.classList).slice(0, 2);
-    for (const cls of classes) {
-      part += '.' + CSS.escape(cls);
-    }
-
-    const siblings = current.parentNode ? Array.from(current.parentNode.children) : [];
-    if (siblings.length > 1) {
-      part += ':nth-child(' + (siblings.indexOf(current) + 1) + ')';
-    }
-
-    parts.unshift(part);
-    current = current.parentElement;
+  if (element.id && root.querySelectorAll('#' + CSS.escape(element.id)).length === 1) {
+    return '#' + CSS.escape(element.id);
   }
 
-  return parts.join(' > ');
+  const tagName = (element.localName || element.tagName || '').toLowerCase();
+  if (tagName === 'html' || tagName === 'head' || tagName === 'body') {
+    return tagName;
+  }
+
+  const classList = element.classList || [];
+  for (let i = 0; i < classList.length; i++) {
+    let selector = '.' + CSS.escape(classList.item(i));
+    if (root.querySelectorAll(selector).length === 1) return selector;
+
+    selector = CSS.escape(tagName) + selector;
+    if (root.querySelectorAll(selector).length === 1) return selector;
+
+    if (!element.parentNode || !element.parentNode.children) continue;
+    const index = positionInNodeList(element, element.parentNode.children) + 1;
+    selector = selector + ':nth-child(' + index + ')';
+    if (root.querySelectorAll(selector).length === 1) return selector;
+  }
+
+  if (!element.parentNode || !element.parentNode.children) return null;
+
+  const index = positionInNodeList(element, element.parentNode.children) + 1;
+  if (index < 1) return null;
+
+  let selector = CSS.escape(tagName) + ':nth-child(' + index + ')';
+  if (element.parentNode !== root) {
+    const parentSelector = getSelector(element.parentNode);
+    if (!parentSelector) return null;
+    selector = parentSelector + ' > ' + selector;
+  }
+  return selector;
 }
 
 function isTextInput(element) {
