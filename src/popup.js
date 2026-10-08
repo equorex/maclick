@@ -28,10 +28,29 @@ const ICON_PATHS = {
 const STEP_TYPES = [
   ['click', 'Click'],
   ['input_text', 'Input text'],
-  ['wait_element', 'Wait + click'],
-  ['wait_timeout', 'Pause'],
-  ['wait_page_load', 'Wait for load']
+  ['wait_element', 'Wait element then click'],
+  ['wait_timeout', 'Timeout'],
+  ['wait_page_load', 'Wait for load page']
 ];
+
+const STEP_DEFAULTS = {
+  click: () => ({ selector: '' }),
+  input_text: () => ({ selector: '', value: '' }),
+  wait_element: () => ({ selector: '', timeout: TASK_DEFAULT_TIMEOUT }),
+  wait_timeout: () => ({ ms: 1000 }),
+  wait_page_load: () => ({ timeout: PAGE_LOAD_DEFAULT_TIMEOUT })
+};
+
+function normalizeStep(type, source = {}) {
+  const step = { type, ...STEP_DEFAULTS[type]() };
+
+  if ('selector' in step && typeof source.selector === 'string') step.selector = source.selector;
+  if ('value' in step && source.value != null) step.value = source.value;
+  if ('timeout' in step && Number.isFinite(source.timeout)) step.timeout = source.timeout;
+  if ('ms' in step && Number.isFinite(source.ms)) step.ms = source.ms;
+
+  return step;
+}
 
 function createIcon(name) {
   const svg = document.createElementNS(SVG_NS, 'svg');
@@ -266,40 +285,47 @@ function createStepRow(step, idx) {
   number.className = 'step-number';
   number.textContent = `${idx + 1}.`;
 
-  const label = document.createElement('span');
-  label.className = 'step-label';
+  const typeSelect = document.createElement('select');
+  typeSelect.className = 'step-type';
+  typeSelect.title = 'Action type';
+  for (const [value, text] of STEP_TYPES) {
+    const option = document.createElement('option');
+    option.value = value;
+    option.textContent = text;
+    typeSelect.appendChild(option);
+  }
+  typeSelect.value = step.type;
+  typeSelect.addEventListener('change', () => changeStepType(idx, typeSelect.value));
 
   row.appendChild(handle);
   row.appendChild(number);
+  row.appendChild(typeSelect);
 
   if (step.type === 'click' || step.type === 'wait_element') {
-    label.textContent = step.type === 'click' ? 'Click:' : 'Wait + click:';
-    row.appendChild(label);
     row.appendChild(createSelectorInput(step));
 
     if (step.type === 'wait_element') {
       row.appendChild(createTimeoutInput(step));
     }
   } else if (step.type === 'input_text') {
-    label.textContent = 'Input text:';
-    row.appendChild(label);
     row.appendChild(createSelectorInput(step));
     row.appendChild(createValueInput(step));
   } else if (step.type === 'wait_timeout') {
-    label.textContent = 'Pause (ms):';
-    row.appendChild(label);
     row.appendChild(createMsInput(step));
   } else if (step.type === 'wait_page_load') {
-    label.textContent = 'Wait for load:';
-    row.appendChild(label);
     row.appendChild(createTimeoutInput(step, PAGE_LOAD_DEFAULT_TIMEOUT));
-  } else {
-    label.textContent = `${step.type}:`;
-    row.appendChild(label);
   }
 
   row.appendChild(createIconButton('close', 'Remove step', false, () => removeStepAt(idx)));
   return row;
+}
+
+function changeStepType(idx, type) {
+  const step = editingSteps[idx];
+  if (!step || step.type === type) return;
+
+  editingSteps[idx] = normalizeStep(type, step);
+  renderSteps();
 }
 
 function createSelectorInput(step) {
@@ -417,20 +443,11 @@ function removeStepAt(idx) {
 function addStep() {
   const select = editorRefs.typeSelect;
   const stepType = select ? select.value : 'click';
-  const timeout = readDefaultTimeout();
 
-  if (stepType === 'wait_timeout') {
-    editingSteps.push({ type: 'wait_timeout', ms: 1000 });
-  } else if (stepType === 'input_text') {
-    editingSteps.push({ type: 'input_text', selector: '', value: '' });
-  } else if (stepType === 'wait_page_load') {
-    editingSteps.push({ type: 'wait_page_load', timeout: PAGE_LOAD_DEFAULT_TIMEOUT });
-  } else if (stepType === 'wait_element') {
-    editingSteps.push({ type: 'wait_element', selector: '', timeout });
-  } else {
-    editingSteps.push({ type: 'click', selector: '' });
-  }
+  const step = normalizeStep(stepType);
+  if (stepType === 'wait_element') step.timeout = readDefaultTimeout();
 
+  editingSteps.push(step);
   renderSteps();
 }
 
@@ -481,11 +498,6 @@ function createTaskEditForm(task) {
   const form = document.createElement('form');
   form.className = 'edit-form';
   form.addEventListener('submit', handleEditTask);
-
-  const title = document.createElement('h3');
-  title.className = 'form-title';
-  title.textContent = 'Edit task';
-  form.appendChild(title);
 
   const nameInput = document.createElement('input');
   nameInput.type = 'text';
@@ -614,7 +626,8 @@ function renderLastUsed(tasks) {
   const container = document.getElementById('last-used-task');
   if (!section || !container) return;
 
-  const task = pickLastUsed(tasks);
+  const scoped = currentHost ? tasks.filter(task => task.host === currentHost) : [];
+  const task = pickLastUsed(scoped);
   container.textContent = '';
 
   if (!task) {
@@ -651,6 +664,7 @@ function createTaskCard(task) {
   if (task.id === currentEditingTaskId) {
     const item = document.createElement('div');
     item.className = 'task-card is-editing';
+    item.appendChild(createTaskHead(task));
     item.appendChild(createTaskEditForm(task));
     return item;
   }
@@ -663,10 +677,7 @@ function createTaskCard(task) {
   return buildTaskSummary(task, actions);
 }
 
-function buildTaskSummary(task, actions, extraClass = '') {
-  const item = document.createElement('div');
-  item.className = extraClass ? `task-card ${extraClass}` : 'task-card';
-
+function createTaskHead(task, actionButtons = []) {
   const head = document.createElement('div');
   head.className = 'task-head';
 
@@ -675,12 +686,21 @@ function buildTaskSummary(task, actions, extraClass = '') {
   name.title = task.name;
   head.appendChild(name);
 
-  const actionsEl = document.createElement('div');
-  actionsEl.className = 'task-actions';
-  actions.forEach(button => actionsEl.appendChild(button));
-  head.appendChild(actionsEl);
+  if (actionButtons.length > 0) {
+    const actionsEl = document.createElement('div');
+    actionsEl.className = 'task-actions';
+    actionButtons.forEach(button => actionsEl.appendChild(button));
+    head.appendChild(actionsEl);
+  }
 
-  item.appendChild(head);
+  return head;
+}
+
+function buildTaskSummary(task, actions, extraClass = '') {
+  const item = document.createElement('div');
+  item.className = extraClass ? `task-card ${extraClass}` : 'task-card';
+
+  item.appendChild(createTaskHead(task, actions));
 
   if (task.description) {
     const description = document.createElement('div');

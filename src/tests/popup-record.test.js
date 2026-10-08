@@ -246,6 +246,7 @@ function createHarness(options = {}) {
       { id: 'b', name: 'Newer', host: 'example.com', createdAt: Date.now(), lastUsedAt: 20 }
     ]
   });
+  lastUsed.context.__t.currentHost = 'example.com';
   await lastUsed.context.__t.renderTaskList();
 
   assert.strictEqual(lastUsed.elements['last-used-section'].hidden, false, 'last used section shown');
@@ -257,6 +258,20 @@ function createHarness(options = {}) {
     ['Run', 'Edit'],
     'recent card has run and edit only'
   );
+
+  const otherDomain = createHarness({
+    tasks: [{ id: 'a', name: 'Other', host: 'other.com', createdAt: Date.now(), lastUsedAt: 10 }]
+  });
+  otherDomain.context.__t.currentHost = 'example.com';
+  await otherDomain.context.__t.renderTaskList();
+  assert.strictEqual(otherDomain.elements['last-used-section'].hidden, true, 'last used ignores other domains');
+
+  const noHostLastUsed = createHarness({
+    tasks: [{ id: 'a', name: 'Any', host: 'example.com', createdAt: Date.now(), lastUsedAt: 10 }]
+  });
+  noHostLastUsed.context.__t.currentHost = '';
+  await noHostLastUsed.context.__t.renderTaskList();
+  assert.strictEqual(noHostLastUsed.elements['last-used-section'].hidden, true, 'last used hidden without current domain');
 
   assert.strictEqual(lastUsed.context.__t.pickLastUsed([]), null, 'no last used without tasks');
   assert.strictEqual(lastUsed.context.__t.pickLastUsed([{ id: 'x' }]), null, 'tasks without lastUsedAt ignored');
@@ -316,6 +331,8 @@ function createHarness(options = {}) {
   assert.strictEqual(editing.context.__t.currentEditingTaskId, 't1', 'task marked as editing');
   const editingCard = editing.elements['task-list'].children[0];
   assert.strictEqual(editingCard.className, 'task-card is-editing', 'card switched to edit mode');
+  assert.strictEqual(editingCard.children[0].className, 'task-head', 'editing card keeps task head');
+  assert.strictEqual(editingCard.children[0].children[0].textContent, 'Old', 'editing head shows task name');
   assert.strictEqual(editing.context.__t.editor.name.value, 'Old', 'editor prefilled with name');
   assert.strictEqual(editing.context.__t.editor.steps.children.length, 1, 'editor renders steps');
 
@@ -335,6 +352,7 @@ function createHarness(options = {}) {
   const running = createHarness({
     tasks: [{ id: 't1', name: 'Runner', host: 'example.com', createdAt: Date.now(), steps: [] }]
   });
+  running.context.__t.currentHost = 'example.com';
   await running.context.__t.runTask('t1');
 
   assert.strictEqual(running.state.executed, true, 'task executed');

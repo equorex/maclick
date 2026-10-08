@@ -67,7 +67,7 @@ vm.runInContext(fs.readFileSync(path.join(jsDir, 'storage.js'), 'utf8'), context
 vm.runInContext(fs.readFileSync(path.join(jsDir, 'executor.js'), 'utf8'), context);
 
 const source = fs.readFileSync(path.join(__dirname, '..', 'popup.js'), 'utf8') +
-  '\nglobalThis.__t = { renderSteps, reorderSteps, removeStepAt, addStep, editor: editorRefs, get steps() { return editingSteps; }, set steps(v) { editingSteps = v; } };';
+  '\nglobalThis.__t = { renderSteps, reorderSteps, removeStepAt, addStep, changeStepType, normalizeStep, editor: editorRefs, get steps() { return editingSteps; }, set steps(v) { editingSteps = v; } };';
 vm.runInContext(source, context);
 
 assert.strictEqual(context.TASK_DEFAULT_TIMEOUT, 300, 'popup sees TASK_DEFAULT_TIMEOUT from storage.js');
@@ -81,6 +81,7 @@ t.editor.timeout = elements['task-timeout'];
 t.editor.typeSelect = elements['step-type-select'];
 
 const selectorOf = row => row.children[3];
+const typeSelectOf = row => row.children[2];
 const numberTextOf = row => row.children[1].textContent;
 
 const dragEvent = () => ({ preventDefault() {}, dataTransfer: { setData() {}, effectAllowed: '', dropEffect: '' } });
@@ -98,10 +99,13 @@ assert.strictEqual(container.children[0].children[0].className, 'drag-handle', '
 assert.strictEqual(container.children[0].children[0].children[0].tagName, 'SVG', 'drag handle has icon');
 assert.strictEqual(container.children[0].draggable, true, 'step row is draggable');
 assert.strictEqual(container.children[0].dataset.index, '0', 'step row index stored');
+assert.strictEqual(typeSelectOf(container.children[0]).className, 'step-type', 'type select rendered');
+assert.strictEqual(typeSelectOf(container.children[0]).value, 'click', 'type select reflects click');
+assert.strictEqual(typeSelectOf(container.children[2]).value, 'wait_element', 'type select reflects wait_element');
 assert.strictEqual(selectorOf(container.children[0]).value, '#a', 'selector in input');
 assert.strictEqual(selectorOf(container.children[1]).value, 500, 'ms in input');
 assert.strictEqual(selectorOf(container.children[2]).value, '#c', 'selector in last row');
-assert.strictEqual(container.children[0].children.length, 5, 'click row: handle, number, label, selector, remove');
+assert.strictEqual(container.children[0].children.length, 5, 'click row: handle, number, select, selector, remove');
 assert.strictEqual(container.children[2].children.length, 6, 'wait_element row has timeout input');
 
 selectorOf(container.children[0]).value = '#changed';
@@ -206,7 +210,7 @@ t.renderSteps();
 container = elements.editStepsList;
 
 assert.strictEqual(container.children.length, 1, 'input_text row rendered');
-assert.strictEqual(container.children[0].children[2].textContent, 'Input text:', 'input_text label');
+assert.strictEqual(typeSelectOf(container.children[0]).value, 'input_text', 'input_text type selected');
 assert.strictEqual(container.children[0].children[3].value, '#name', 'input_text selector bound');
 assert.strictEqual(container.children[0].children[4].value, 'Alice', 'input_text value bound');
 
@@ -220,5 +224,37 @@ assert.strictEqual(t.steps[0].value, 'Bob', 'editing input_text value updates mo
 elements['step-type-select'].value = 'input_text';
 t.addStep();
 assert.deepStrictEqual(JSON.parse(JSON.stringify(t.steps[1])), { type: 'input_text', selector: '', value: '' }, 'add input_text step');
+
+t.steps = [{ type: 'click', selector: '#x' }];
+t.renderSteps();
+t.changeStepType(0, 'wait_element');
+assert.deepStrictEqual(JSON.parse(JSON.stringify(t.steps[0])), { type: 'wait_element', selector: '#x', timeout: 300 }, 'change click to wait_element keeps selector');
+assert.strictEqual(elements.editStepsList.children[0].children[4].value, 300, 'wait_element shows timeout field after change');
+
+t.steps = [{ type: 'input_text', selector: '#name', value: 'Alice' }];
+t.renderSteps();
+t.changeStepType(0, 'click');
+assert.deepStrictEqual(JSON.parse(JSON.stringify(t.steps[0])), { type: 'click', selector: '#name' }, 'change input_text to click keeps selector and drops value');
+
+t.steps = [{ type: 'click', selector: '#a' }];
+t.renderSteps();
+t.changeStepType(0, 'wait_timeout');
+assert.deepStrictEqual(JSON.parse(JSON.stringify(t.steps[0])), { type: 'wait_timeout', ms: 1000 }, 'change click to timeout');
+
+t.changeStepType(0, 'wait_page_load');
+assert.deepStrictEqual(JSON.parse(JSON.stringify(t.steps[0])), { type: 'wait_page_load', timeout: 30000 }, 'change timeout to wait_page_load');
+
+t.changeStepType(0, 'click');
+assert.deepStrictEqual(JSON.parse(JSON.stringify(t.steps[0])), { type: 'click', selector: '' }, 'change back to click resets fields');
+
+t.changeStepType(0, 'click');
+assert.deepStrictEqual(JSON.parse(JSON.stringify(t.steps[0])), { type: 'click', selector: '' }, 'same type change is a no-op');
+
+t.steps = [{ type: 'click', selector: '#z' }];
+t.renderSteps();
+const rowSelect = elements.editStepsList.children[0].children[2];
+rowSelect.value = 'input_text';
+rowSelect.dispatch('change');
+assert.strictEqual(t.steps[0].type, 'input_text', 'select change updates step type');
 
 console.log('popup steps tests passed');
