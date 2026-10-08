@@ -24,7 +24,10 @@ function createElement(tag) {
     children: [],
     style: {},
     value: '',
+    attributes: {},
     classList: createClassList(),
+    setAttribute(name, value) { el.attributes[name] = value; },
+    getAttribute(name) { return el.attributes[name]; },
     addEventListener(type, fn) { (listeners[type] = listeners[type] || []).push(fn); },
     dispatch(type, event) { (listeners[type] || []).forEach(fn => fn(event)); },
     querySelector() { return null; },
@@ -52,7 +55,8 @@ function createHarness(options = {}) {
   const document = {
     addEventListener() {},
     getElementById(id) { return elements[id] || null; },
-    createElement
+    createElement,
+    createElementNS(ns, tag) { return createElement(tag); }
   };
 
   const browser = {
@@ -104,7 +108,7 @@ function createHarness(options = {}) {
     'start message sent'
   );
   assert.strictEqual(started.state.closed, true, 'popup closed after successful start');
-  assert.strictEqual(started.elements['record-btn'].textContent, '⏹ Stop', 'button switched to stop');
+  assert.strictEqual(started.elements['record-btn'].textContent, 'Stop', 'button switched to stop');
   assert.strictEqual(started.elements.indicator.classList.contains('recording'), true, 'indicator is recording');
 
   const failed = createHarness();
@@ -183,9 +187,18 @@ function createHarness(options = {}) {
     'action buttons rendered'
   );
   assert.deepStrictEqual(
-    actions.children.map(button => button.textContent),
-    ['▶ Run', '✎ Edit', '🗑 Delete'],
-    'action button labels'
+    actions.children.map(button => button.getAttribute('aria-label')),
+    ['Run', 'Edit', 'Delete'],
+    'action button accessible labels'
+  );
+  assert.ok(
+    actions.children.every(button => button.children[0].tagName === 'SVG'),
+    'action buttons render an icon'
+  );
+  assert.deepStrictEqual(
+    actions.children.map(button => button.children[1].textContent),
+    ['Run', 'Edit', 'Delete'],
+    'action button text labels'
   );
 
   const described = createHarness({

@@ -9,8 +9,11 @@ function createElement(tag) {
     tagName: tag.toUpperCase(),
     children: [],
     style: {},
+    attributes: {},
     classList: { toggle() {}, add() {}, remove() {} },
     appendChild(child) { el.children.push(child); return child; },
+    setAttribute(name, value) { el.attributes[name] = value; },
+    getAttribute(name) { return el.attributes[name]; },
     addEventListener(type, fn) { (listeners[type] = listeners[type] || []).push(fn); },
     dispatch(type) { (listeners[type] || []).forEach(fn => fn({ preventDefault() {} })); },
     querySelector() { return null; },
@@ -29,7 +32,8 @@ const elements = {
 const document = {
   addEventListener() {},
   getElementById(id) { return elements[id] || null; },
-  createElement
+  createElement,
+  createElementNS(ns, tag) { return createElement(tag); }
 };
 
 const browser = {

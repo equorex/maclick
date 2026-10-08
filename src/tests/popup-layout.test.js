@@ -36,6 +36,11 @@ assertContains('.step-type-select', 'min-width: 0');
 assertContains('button', 'cursor: pointer');
 assertContains('button:disabled', 'cursor: default');
 
+assertContains(':root', '--accent');
+assertContains(':root', '--surface');
+assertContains(':root', '--border');
+assert.ok(css.includes('@media (prefers-color-scheme: dark)'), 'dark theme media query present');
+
 const fixedWidths = [...css.matchAll(/(?:^|[;{\s])width:\s*(\d+)px/g)].map(match => Number(match[1]));
 assert.ok(fixedWidths.length > 0, 'fixed widths found in popup.html');
 assert.ok(fixedWidths.every(width => width <= POPUP_WIDTH), 'no fixed width exceeds popup width');

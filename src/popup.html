@@ -4,78 +4,304 @@
   <meta charset="UTF-8">
   <title>maclick</title>
   <style>
+    :root {
+      --accent: #4f46e5;
+      --accent-hover: #4338ca;
+      --accent-soft: #eef2ff;
+      --accent-contrast: #ffffff;
+      --danger: #dc2626;
+      --danger-hover: #b91c1c;
+      --success: #16a34a;
+      --bg: #f8fafc;
+      --surface: #ffffff;
+      --surface-2: #f1f5f9;
+      --border: #e2e8f0;
+      --border-strong: #cbd5e1;
+      --text: #0f172a;
+      --text-muted: #64748b;
+      --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06);
+      --shadow-md: 0 8px 24px rgba(15, 23, 42, 0.12);
+      --radius: 12px;
+      --radius-sm: 8px;
+      --radius-pill: 999px;
+      --transition: 150ms ease;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --accent: #6366f1;
+        --accent-hover: #818cf8;
+        --accent-soft: #1e1b4b;
+        --accent-contrast: #ffffff;
+        --danger: #ef4444;
+        --danger-hover: #f87171;
+        --success: #22c55e;
+        --bg: #0f172a;
+        --surface: #1e293b;
+        --surface-2: #273449;
+        --border: #334155;
+        --border-strong: #475569;
+        --text: #e2e8f0;
+        --text-muted: #94a3b8;
+        --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+        --shadow-md: 0 10px 28px rgba(0, 0, 0, 0.5);
+      }
+    }
+
     * { box-sizing: border-box; }
     html, body { margin: 0; }
-    body { width: 500px; overflow-x: hidden; }
-    button { cursor: pointer; }
-    button:disabled { cursor: default; }
-    .container { padding: 16px; }
-    h1 { margin: 0 0 24px; }
 
-    .status-message { display: none; padding: 8px 12px; margin-bottom: 16px; border-radius: 6px; font-size: 12px; overflow-wrap: anywhere; }
-    .status-message.visible { display: block; }
-    .status-message.info { background: #ebf8ff; color: #2b6cb0; }
-    .status-message.success { background: #f0fff4; color: #276749; }
-    .status-message.error { background: #fff5f5; color: #c53030; }
+    body {
+      width: 500px;
+      overflow-x: hidden;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      font-size: 14px;
+      line-height: 1.45;
+      color: var(--text);
+      background: var(--bg);
+      -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
+    }
 
-    .record-row { display: flex; align-items: center; gap: 12px; margin-bottom: 24px; }
-    .indicator { width: 10px; height: 10px; border-radius: 50%; background: #cbd5e0; }
-    .indicator.recording { background: #e53e3e; }
+    button {
+      cursor: pointer;
+      font: inherit;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      border: 1px solid transparent;
+      border-radius: var(--radius-sm);
+      transition: background var(--transition), color var(--transition), border-color var(--transition), box-shadow var(--transition), transform var(--transition);
+    }
+    button:disabled { cursor: default; opacity: 0.5; }
+    button:not(:disabled):active { transform: translateY(1px); }
+    button:focus-visible,
+    input:focus-visible,
+    select:focus-visible,
+    textarea:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
 
-    .edit-form { display: none; margin-top: 16px; padding: 16px; background: #f7fafc; border-radius: 8px; }
-    .edit-form.visible { display: block; }
-    .edit-form h3 { margin: 0 0 12px; font-size: 14px; }
-    .field { display: block; margin-bottom: 8px; }
-    .field-label { font-size: 12px; }
-    .field-input { display: block; box-sizing: border-box; width: 100%; padding: 6px; border-radius: 4px; border: 1px solid #cbd5e0; resize: vertical; }
+    svg { display: block; flex-shrink: 0; }
 
-    .button-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
-    .btn-primary { flex: 1; padding: 8px; background: #319795; color: white; border: none; border-radius: 4px; }
-    .btn-danger { padding: 8px 12px; background: #e53e3e; color: white; border: none; border-radius: 4px; }
+    ::-webkit-scrollbar { width: 10px; height: 10px; }
+    ::-webkit-scrollbar-thumb { background: var(--border-strong); border: 3px solid var(--bg); border-radius: var(--radius-pill); }
+    ::-webkit-scrollbar-track { background: transparent; }
 
-    .steps-header { margin-top: 32px; }
-    .steps-title { font-size: 12px; font-weight: bold; }
-    .steps-list { margin-top: 8px; }
-    .step-add-row { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 6px; }
-    .step-type-select { flex: 1; min-width: 0; padding: 6px; border-radius: 4px; border: 1px solid #cbd5e0; }
-    .btn-add-step { padding: 6px 12px; background: #3182ce; color: white; border: none; border-radius: 4px; }
+    .app { padding: 16px; }
 
-    .task-card { padding: 12px; margin-bottom: 8px; background: white; border-radius: 8px; border: 1px solid #e2e8f0; overflow-wrap: anywhere; }
-    .task-description { font-size: 11px; color: #718096; margin-top: 2px; }
-    .task-meta { font-size: 11px; color: #718096; margin-top: 2px; }
-    .task-actions { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 6px; }
-    .task-actions button { padding: 4px 8px; color: white; border: none; border-radius: 4px; }
-    .btn-run { flex: 1; background: #319795; }
-    .btn-edit { flex: 0 0 140px; background: #6b46c1; }
-    .btn-delete { flex: 0 0 90px; background: #e53e3e; }
+    .app-header { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+    .app-logo { width: 32px; height: 32px; border-radius: var(--radius-sm); background: var(--surface); box-shadow: var(--shadow-sm); }
+    .app-titles { display: flex; flex-direction: column; }
+    .app h1 { margin: 0; font-size: 20px; font-weight: 700; letter-spacing: -0.01em; }
+    .app-subtitle { margin: 0; font-size: 12px; color: var(--text-muted); }
 
-    .step-row { padding: 6px; margin-bottom: 8px; background: white; border-radius: 4px; display: flex; gap: 4px; align-items: center; }
-    .step-number { font-size: 12px; min-width: 16px; color: #718096; }
-    .step-label { font-size: 12px; white-space: nowrap; }
-    .step-input { box-sizing: border-box; flex: 1; min-width: 0; padding: 4px 6px; border-radius: 4px; border: 1px solid #cbd5e0; font-size: 12px; }
-    .step-timeout { box-sizing: border-box; width: 70px; padding: 4px 6px; border-radius: 4px; border: 1px solid #cbd5e0; font-size: 12px; }
-    .icon-btn { padding: 4px 6px; background: #e2e8f0; color: #2d3748; border: none; border-radius: 4px; }
-    .icon-btn:disabled { opacity: 0.4; }
+    .status-message {
+      display: none;
+      overflow-wrap: anywhere;
+      padding: 9px 12px;
+      margin-bottom: 12px;
+      border-radius: var(--radius-sm);
+      border-left: 3px solid transparent;
+      font-size: 12px;
+    }
+    .status-message.visible { display: block; animation: status-in var(--transition); }
+    .status-message.info { background: var(--accent-soft); color: var(--accent); border-left-color: var(--accent); }
+    .status-message.success { background: color-mix(in srgb, var(--success) 12%, transparent); color: var(--success); border-left-color: var(--success); }
+    .status-message.error { background: color-mix(in srgb, var(--danger) 12%, transparent); color: var(--danger); border-left-color: var(--danger); }
 
-    .empty-list { padding: 16px; color: #718096; text-align: center; }
+    @keyframes status-in {
+      from { opacity: 0; transform: translateY(-4px); }
+      to { opacity: 1; transform: none; }
+    }
+
+    .record-card {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 14px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow-sm);
+    }
+    .record-info { display: flex; align-items: center; gap: 10px; min-width: 0; }
+    .record-title { font-weight: 600; }
+    .record-hint { font-size: 12px; color: var(--text-muted); }
+
+    .indicator { width: 10px; height: 10px; border-radius: 50%; background: var(--border-strong); flex-shrink: 0; transition: background var(--transition), box-shadow var(--transition); }
+    .indicator.recording { background: var(--danger); box-shadow: 0 0 0 0 color-mix(in srgb, var(--danger) 60%, transparent); animation: pulse 1.4s infinite; }
+
+    @keyframes pulse {
+      0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--danger) 55%, transparent); }
+      70% { box-shadow: 0 0 0 8px transparent; }
+      100% { box-shadow: 0 0 0 0 transparent; }
+    }
+
+    .btn-record {
+      padding: 8px 18px;
+      background: var(--accent);
+      color: var(--accent-contrast);
+      border-radius: var(--radius-pill);
+      font-weight: 600;
+      box-shadow: var(--shadow-sm);
+    }
+    .btn-record:not(:disabled):hover { background: var(--accent-hover); }
+    body:has(.indicator.recording) .btn-record { background: var(--danger); }
+    body:has(.indicator.recording) .btn-record:not(:disabled):hover { background: var(--danger-hover); }
+
+    .tasks-section { margin-top: 20px; }
+    .section-title { margin: 0 0 10px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); }
+
+    .task-card {
+      overflow-wrap: anywhere;
+      padding: 12px;
+      margin-bottom: 10px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow-sm);
+      transition: box-shadow var(--transition), border-color var(--transition);
+    }
+    .task-card:hover { box-shadow: var(--shadow-md); border-color: var(--border-strong); }
+    .task-card > strong { display: block; font-size: 14px; font-weight: 600; }
+    .task-description { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+    .task-meta { font-size: 11px; color: var(--text-muted); margin-top: 6px; }
+
+    .task-actions { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 6px; }
+    .task-actions button { padding: 6px 10px; font-size: 12px; font-weight: 600; border-radius: var(--radius-sm); }
+    .task-actions .btn-run { flex: 1; background: var(--accent); color: var(--accent-contrast); }
+    .task-actions .btn-run:hover { background: var(--accent-hover); }
+    .task-actions .btn-edit { flex: 0 0 110px; background: var(--surface-2); color: var(--text); border-color: var(--border); }
+    .task-actions .btn-edit:hover { background: var(--border); }
+    .task-actions .btn-delete { flex: 0 0 96px; background: var(--danger); color: #ffffff; }
+    .task-actions .btn-delete:hover { background: var(--danger-hover); }
+
+    .empty-list {
+      margin: 0;
+      padding: 28px 16px;
+      color: var(--text-muted);
+      text-align: center;
+      background: var(--surface);
+      border: 1px dashed var(--border-strong);
+      border-radius: var(--radius);
+      font-size: 13px;
+    }
+
+    .edit-form {
+      display: none;
+      margin-top: 16px;
+      padding: 16px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow-sm);
+    }
+    .edit-form.visible { display: block; animation: status-in var(--transition); }
+    .form-title { margin: 0 0 14px; font-size: 14px; font-weight: 700; }
+
+    .field { display: block; margin-bottom: 12px; }
+    .field-label { display: block; margin-bottom: 4px; font-size: 12px; font-weight: 600; color: var(--text-muted); }
+    .field-input {
+      display: block;
+      width: 100%;
+      padding: 8px 10px;
+      color: var(--text);
+      background: var(--bg);
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius-sm);
+      resize: vertical;
+      transition: border-color var(--transition), box-shadow var(--transition);
+    }
+    .field-input:hover { border-color: var(--accent); }
+
+    .steps-header { margin-top: 20px; }
+    .steps-title { display: block; margin-bottom: 8px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); }
+    .steps-list { display: flex; flex-direction: column; gap: 8px; }
+
+    .step-add-row { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 6px; }
+    .step-type-select {
+      flex: 1;
+      min-width: 0;
+      padding: 8px 10px;
+      color: var(--text);
+      background: var(--bg);
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius-sm);
+    }
+    .btn-add-step { padding: 8px 12px; background: var(--accent-soft); color: var(--accent); border-color: transparent; font-weight: 600; }
+    .btn-add-step:hover { background: var(--accent); color: var(--accent-contrast); }
+
+    .step-row {
+      padding: 8px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      align-items: center;
+    }
+    .step-number { font-size: 12px; min-width: 18px; color: var(--text-muted); font-weight: 600; text-align: right; }
+    .step-label { font-size: 12px; color: var(--text-muted); white-space: nowrap; }
+    .step-input,
+    .step-timeout {
+      box-sizing: border-box;
+      min-width: 0;
+      padding: 6px 8px;
+      color: var(--text);
+      background: var(--surface);
+      border: 1px solid var(--border-strong);
+      border-radius: 6px;
+      font-size: 12px;
+    }
+    .step-input { flex: 1; }
+    .step-timeout { width: 70px; }
+
+    .icon-btn { padding: 6px; background: var(--surface); color: var(--text-muted); border-color: var(--border); }
+    .icon-btn:not(:disabled):hover { color: var(--text); border-color: var(--border-strong); }
+    .icon-btn:disabled { opacity: 0.35; }
+
+    .button-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+    .btn-primary { flex: 1; padding: 10px; background: var(--accent); color: var(--accent-contrast); font-weight: 600; border-radius: var(--radius-sm); }
+    .btn-primary:hover { background: var(--accent-hover); }
+    .btn-secondary { padding: 10px 14px; background: var(--surface-2); color: var(--text); border-color: var(--border); font-weight: 600; }
+    .btn-secondary:hover { background: var(--border); }
   </style>
 </head>
 <body>
-  <div class="container">
-    <h1>maclick</h1>
+  <div class="app">
+    <header class="app-header">
+      <img class="app-logo" src="icons/icon48.svg" alt="">
+      <div class="app-titles">
+        <h1>maclick</h1>
+        <p class="app-subtitle">Record &amp; replay macros</p>
+      </div>
+    </header>
 
     <div id="status-message" class="status-message"></div>
 
-    <div class="record-row">
-      <div id="indicator" class="indicator"></div>
-      <button id="record-btn">Record</button>
-    </div>
+    <section class="record-card">
+      <div class="record-info">
+        <div id="indicator" class="indicator"></div>
+        <div>
+          <div class="record-title">Recorder</div>
+          <div id="record-hint" class="record-hint">Idle</div>
+        </div>
+      </div>
+      <button id="record-btn" type="button" class="btn-record">Record</button>
+    </section>
 
-    <h3>Tasks</h3>
-    <div id="task-list"></div>
+    <section class="tasks-section">
+      <h3 class="section-title">Tasks</h3>
+      <div id="task-list"></div>
+    </section>
 
     <form id="create-task-form" class="edit-form">
-      <h3>Edit task</h3>
+      <h3 class="form-title">Edit task</h3>
       <label class="field">
         <span class="field-label">Name:</span>
         <input type="text" id="task-name" class="field-input" placeholder="Enter task name" required>
@@ -102,12 +328,15 @@
           <option value="wait_timeout">Pause</option>
           <option value="wait_page_load">Wait for load</option>
         </select>
-        <button type="button" id="add-step-btn" class="btn-add-step">➕ Add step</button>
+        <button type="button" id="add-step-btn" class="btn-add-step">
+          <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false"><path fill="currentColor" d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
+          <span>Add step</span>
+        </button>
       </div>
-      
+
       <div class="button-row">
         <button type="submit" class="btn-primary">Save</button>
-        <button type="button" id="cancel-create-btn" class="btn-danger">Cancel</button>
+        <button type="button" id="cancel-create-btn" class="btn-secondary">Cancel</button>
       </div>
     </form>
   </div>

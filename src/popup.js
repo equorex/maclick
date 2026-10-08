@@ -3,6 +3,31 @@ let currentEditingTaskId = null;
 let editingSteps = [];
 let statusTimer = null;
 
+const SVG_NS = 'http://www.w3.org/2000/svg';
+const ICON_PATHS = {
+  play: 'M8 5v14l11-7z',
+  edit: 'M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z',
+  trash: 'M6 19a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z',
+  arrowUp: 'M7.41 15.41 12 10.83l4.59 4.58L18 14l-6-6-6 6z',
+  arrowDown: 'M7.41 8.59 12 13.17l4.59-4.58L18 10l-6 6-6-6z',
+  close: 'M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z'
+};
+
+function createIcon(name) {
+  const svg = document.createElementNS(SVG_NS, 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('width', '16');
+  svg.setAttribute('height', '16');
+  svg.setAttribute('aria-hidden', 'true');
+  svg.setAttribute('focusable', 'false');
+
+  const path = document.createElementNS(SVG_NS, 'path');
+  path.setAttribute('fill', 'currentColor');
+  path.setAttribute('d', ICON_PATHS[name]);
+  svg.appendChild(path);
+  return svg;
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   const recordBtn = document.getElementById('record-btn');
   const createForm = document.getElementById('create-task-form');
@@ -45,7 +70,10 @@ function updateRecordUi() {
   if (indicator) indicator.classList.toggle('recording', isRecording);
 
   const recordBtn = document.getElementById('record-btn');
-  if (recordBtn) recordBtn.textContent = isRecording ? '⏹ Stop' : 'Record';
+  if (recordBtn) recordBtn.textContent = isRecording ? 'Stop' : 'Record';
+
+  const hint = document.getElementById('record-hint');
+  if (hint) hint.textContent = isRecording ? 'Recording…' : 'Idle';
 }
 
 function closePopup() {
@@ -144,8 +172,8 @@ function createStepRow(step, idx) {
   label.className = 'step-label';
 
   row.appendChild(number);
-  row.appendChild(createIconButton('↑', 'Move up', idx === 0, () => moveStep(idx, -1)));
-  row.appendChild(createIconButton('↓', 'Move down', idx === editingSteps.length - 1, () => moveStep(idx, 1)));
+  row.appendChild(createIconButton('arrowUp', 'Move up', idx === 0, () => moveStep(idx, -1)));
+  row.appendChild(createIconButton('arrowDown', 'Move down', idx === editingSteps.length - 1, () => moveStep(idx, 1)));
 
   if (step.type === 'click' || step.type === 'wait_element') {
     label.textContent = step.type === 'click' ? 'Click:' : 'Wait + click:';
@@ -173,7 +201,7 @@ function createStepRow(step, idx) {
     row.appendChild(label);
   }
 
-  row.appendChild(createIconButton('✕', 'Remove step', false, () => removeStepAt(idx)));
+  row.appendChild(createIconButton('close', 'Remove step', false, () => removeStepAt(idx)));
   return row;
 }
 
@@ -225,13 +253,14 @@ function createTimeoutInput(step, defaultValue = TASK_DEFAULT_TIMEOUT) {
   return input;
 }
 
-function createIconButton(text, title, disabled, onClick) {
+function createIconButton(iconName, title, disabled, onClick) {
   const button = document.createElement('button');
   button.type = 'button';
   button.className = 'icon-btn';
-  button.textContent = text;
   button.title = title;
+  button.setAttribute('aria-label', title);
   button.disabled = disabled;
+  button.appendChild(createIcon(iconName));
   button.addEventListener('click', onClick);
   return button;
 }
@@ -339,19 +368,26 @@ function createTaskCard(task) {
 
   const actions = document.createElement('div');
   actions.className = 'task-actions';
-  actions.appendChild(createTaskButton('▶ Run', 'btn-run', () => runTask(task.id)));
-  actions.appendChild(createTaskButton('✎ Edit', 'btn-edit', () => editTask(task.id)));
-  actions.appendChild(createTaskButton('🗑 Delete', 'btn-delete', () => deleteTask(task.id)));
+  actions.appendChild(createTaskButton('play', 'Run', 'btn-run', () => runTask(task.id)));
+  actions.appendChild(createTaskButton('edit', 'Edit', 'btn-edit', () => editTask(task.id)));
+  actions.appendChild(createTaskButton('trash', 'Delete', 'btn-delete', () => deleteTask(task.id)));
   item.appendChild(actions);
 
   return item;
 }
 
-function createTaskButton(text, className, onClick) {
+function createTaskButton(iconName, label, className, onClick) {
   const button = document.createElement('button');
   button.type = 'button';
   button.className = className;
-  button.textContent = text;
+  button.setAttribute('aria-label', label);
+  button.appendChild(createIcon(iconName));
+
+  const text = document.createElement('span');
+  text.className = 'btn-label';
+  text.textContent = label;
+  button.appendChild(text);
+
   button.addEventListener('click', onClick);
   return button;
 }
