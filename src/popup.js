@@ -71,6 +71,9 @@ document.addEventListener('DOMContentLoaded', () => {
   const recordBtn = document.getElementById('record-btn');
   if (recordBtn) recordBtn.addEventListener('click', toggleRecord);
 
+  const grantBtn = document.getElementById('grant-permission-btn');
+  if (grantBtn) grantBtn.addEventListener('click', requestHostAccess);
+
   bindDomainFilter();
   init();
 });
@@ -85,6 +88,7 @@ async function init() {
 
   currentHost = await getCurrentHost();
   updateDomainFilterUi();
+  await updatePermissionBanner();
 
   await checkRecordingState();
   await renderTaskList();
@@ -108,6 +112,44 @@ function getHostFromUrl(url) {
 async function getCurrentHost() {
   const tab = await getActiveTab();
   return tab ? getHostFromUrl(tab.url) : '';
+}
+
+const HOST_ORIGINS = ['<all_urls>'];
+
+async function hasHostAccess() {
+  if (!browser.permissions || typeof browser.permissions.contains !== 'function') return true;
+
+  try {
+    return await browser.permissions.contains({ origins: HOST_ORIGINS });
+  } catch (e) {
+    console.error('Failed to check host access:', e);
+    return true;
+  }
+}
+
+async function updatePermissionBanner() {
+  const banner = document.getElementById('permission-banner');
+  if (!banner) return;
+
+  banner.hidden = await hasHostAccess();
+}
+
+async function requestHostAccess() {
+  if (!browser.permissions || typeof browser.permissions.request !== 'function') return;
+
+  try {
+    const granted = await browser.permissions.request({ origins: HOST_ORIGINS });
+    await updatePermissionBanner();
+
+    if (granted) {
+      showStatus('Site access granted', 'success');
+    } else {
+      showStatus('Site access is required to run tasks', 'error');
+    }
+  } catch (e) {
+    console.error('Failed to request host access:', e);
+    showStatus('Failed to request site access', 'error');
+  }
 }
 
 function showStatus(message, type = 'info') {

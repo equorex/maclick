@@ -41,7 +41,7 @@ function createElement(tag) {
 
 const jsDir = path.join(__dirname, '..', 'js');
 const popupSource = fs.readFileSync(path.join(__dirname, '..', 'popup.js'), 'utf8') +
-  '\nglobalThis.__t = { toggleRecord, renderTaskList, renderLastUsed, renderTasks, editTask, handleEditTask, cancelEdit, deleteTask, runTask, reorderSteps, filterTasks, pickLastUsed, selectDomainFilter, updateDomainFilterUi,' +
+  '\nglobalThis.__t = { toggleRecord, renderTaskList, renderLastUsed, renderTasks, editTask, handleEditTask, cancelEdit, deleteTask, runTask, reorderSteps, filterTasks, pickLastUsed, selectDomainFilter, updateDomainFilterUi, hasHostAccess, updatePermissionBanner, requestHostAccess,' +
   ' editor: editorRefs,' +
   ' get currentEditingTaskId() { return currentEditingTaskId; },' +
   ' get isRecording() { return isRecording; }, set isRecording(v) { isRecording = v; },' +
@@ -64,7 +64,9 @@ function createHarness(options = {}) {
     'task-list': createElement('div'),
     'last-used-section': createElement('section'),
     'last-used-task': createElement('div'),
-    'domain-filter': filterGroup
+    'domain-filter': filterGroup,
+    'permission-banner': createElement('div'),
+    'grant-permission-btn': createElement('button')
   };
 
   const state = {
@@ -75,6 +77,8 @@ function createHarness(options = {}) {
     tasks: (options.tasks || []).map(task => ({ ...task })),
     prefs: { maclick_domain_filter: options.domainFilter }
   };
+
+  let hostAccess = options.hostAccess !== false;
 
   const document = {
     addEventListener() {},
@@ -115,6 +119,16 @@ function createHarness(options = {}) {
       }
     }
   };
+
+  if (!options.noPermissionsApi) {
+    browser.permissions = {
+      async contains() { return hostAccess; },
+      async request() {
+        hostAccess = options.requestGranted !== false;
+        return hostAccess;
+      }
+    };
+  }
 
   const context = vm.createContext({
     document,
@@ -359,6 +373,31 @@ function createHarness(options = {}) {
   assert.ok(Number.isFinite(running.state.tasks[0].lastUsedAt), 'lastUsedAt recorded on run');
   assert.strictEqual(running.elements['last-used-section'].hidden, false, 'last used section appears after run');
   assert.strictEqual(running.elements['last-used-task'].children.length, 1, 'last used card rendered');
+
+  const withAccess = createHarness();
+  assert.strictEqual(await withAccess.context.__t.hasHostAccess(), true, 'host access detected');
+  await withAccess.context.__t.updatePermissionBanner();
+  assert.strictEqual(withAccess.elements['permission-banner'].hidden, true, 'banner hidden when access granted');
+
+  const noAccess = createHarness({ hostAccess: false });
+  assert.strictEqual(await noAccess.context.__t.hasHostAccess(), false, 'missing host access detected');
+  await noAccess.context.__t.updatePermissionBanner();
+  assert.strictEqual(noAccess.elements['permission-banner'].hidden, false, 'banner shown without access');
+
+  await noAccess.context.__t.requestHostAccess();
+  assert.strictEqual(noAccess.elements['permission-banner'].hidden, true, 'banner hidden after grant');
+  assert.ok(noAccess.elements['status-message'].textContent.includes('granted'), 'grant status shown');
+
+  const denied = createHarness({ hostAccess: false, requestGranted: false });
+  await denied.context.__t.updatePermissionBanner();
+  await denied.context.__t.requestHostAccess();
+  assert.strictEqual(denied.elements['permission-banner'].hidden, false, 'banner stays after denial');
+  assert.ok(denied.elements['status-message'].textContent.includes('required'), 'denial status shown');
+
+  const noApi = createHarness({ noPermissionsApi: true });
+  assert.strictEqual(await noApi.context.__t.hasHostAccess(), true, 'assumes access without permissions API');
+  await noApi.context.__t.updatePermissionBanner();
+  assert.strictEqual(noApi.elements['permission-banner'].hidden, true, 'banner hidden without permissions API');
 
   console.log('popup record tests passed');
 })().catch(e => {

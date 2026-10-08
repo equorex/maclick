@@ -23,6 +23,9 @@
     "storage",
     "activeTab"
   ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
 
   "background": {
     "scripts": ["js/storage.js", "js/background.js"]
