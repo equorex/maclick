@@ -38,6 +38,9 @@ const OVERLAY_CSS = `
 
 let isRecording = false;
 let overlayHost = null;
+let pendingClickSelector = null;
+
+const POINTER_DOWN_EVENT = typeof PointerEvent === 'undefined' ? 'mousedown' : 'pointerdown';
 
 function positionInNodeList(element, nodeList) {
   for (let i = 0; i < nodeList.length; i++) {
@@ -175,12 +178,25 @@ function isOverlayEvent(e) {
   return typeof e.composedPath === 'function' && e.composedPath().includes(overlayHost);
 }
 
+document.addEventListener(POINTER_DOWN_EVENT, function(e) {
+  if (!isRecording || isOverlayEvent(e)) return;
+
+  pendingClickSelector = getSelector(e.target);
+}, true);
+
+document.addEventListener('pointercancel', function() {
+  pendingClickSelector = null;
+}, true);
+
 document.addEventListener('click', function(e) {
   if (!isRecording || isOverlayEvent(e)) return;
 
+  const selector = pendingClickSelector || getSelector(e.target);
+  pendingClickSelector = null;
+
   sendMessage({
     type: 'RECORDED_STEP',
-    step: { type: 'click', selector: getSelector(e.target) }
+    step: { type: 'click', selector }
   });
 }, true);
 

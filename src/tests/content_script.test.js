@@ -138,7 +138,8 @@ function createHarness(options = {}) {
     Node: { ELEMENT_NODE: 1, DOCUMENT_NODE: 9, DOCUMENT_FRAGMENT_NODE: 11 },
     CSS: { escape: value => value },
     setTimeout,
-    clearTimeout
+    clearTimeout,
+    ...(options.pointerEvents === false ? {} : { PointerEvent: function PointerEvent() {} })
   });
 
   vm.runInContext(contentSource, context);
@@ -348,6 +349,56 @@ function createHarness(options = {}) {
   shadowTarget.id = 'inner';
   shadow.appendChild(shadowTarget);
   assert.strictEqual(clickSelector(shadowTarget), '#inner', 'selector inside shadow root');
+
+  const pointerHarness = createHarness({ recording: true });
+  await delay(10);
+
+  const toggle = createElement('button');
+  toggle.id = 'menu-toggle';
+  pointerHarness.document.documentElement.appendChild(toggle);
+
+  pointerHarness.docListeners.pointerdown[0]({ target: toggle, composedPath: () => [toggle] });
+  toggle.id = '';
+  toggle.className = 'menu-toggle expanded';
+
+  pointerHarness.state.sent.length = 0;
+  pointerHarness.docListeners.click[0]({ target: toggle, composedPath: () => [toggle] });
+  eq(pointerHarness.state.sent[0], {
+    type: 'RECORDED_STEP',
+    step: { type: 'click', selector: '#menu-toggle' }
+  }, 'selector captured on pointerdown before DOM mutation');
+
+  const cancelHarness = createHarness({ recording: true });
+  await delay(10);
+
+  const cancelTarget = createElement('button');
+  cancelTarget.id = 'keep';
+  cancelHarness.document.documentElement.appendChild(cancelTarget);
+
+  cancelHarness.docListeners.pointerdown[0]({ target: cancelTarget, composedPath: () => [cancelTarget] });
+  cancelTarget.id = '';
+  cancelTarget.className = 'renamed';
+  cancelHarness.docListeners.pointercancel[0]({});
+
+  cancelHarness.state.sent.length = 0;
+  cancelHarness.docListeners.click[0]({ target: cancelTarget, composedPath: () => [cancelTarget] });
+  assert.strictEqual(cancelHarness.state.sent[0].step.selector, '.renamed', 'pointercancel resets cached selector');
+
+  const legacyHarness = createHarness({ recording: true, pointerEvents: false });
+  await delay(10);
+  assert.ok(legacyHarness.docListeners.mousedown, 'mousedown fallback registered without PointerEvent');
+
+  const legacyTarget = createElement('a');
+  legacyTarget.id = 'legacy';
+  legacyHarness.document.documentElement.appendChild(legacyTarget);
+
+  legacyHarness.docListeners.mousedown[0]({ target: legacyTarget, composedPath: () => [legacyTarget] });
+  legacyTarget.id = '';
+  legacyTarget.className = 'legacy-link';
+
+  legacyHarness.state.sent.length = 0;
+  legacyHarness.docListeners.click[0]({ target: legacyTarget, composedPath: () => [legacyTarget] });
+  assert.strictEqual(legacyHarness.state.sent[0].step.selector, '#legacy', 'mousedown fallback captures selector');
 
   console.log('content script tests passed');
 })().catch(e => {

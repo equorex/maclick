@@ -33,9 +33,42 @@ function executeTask(task) {
     return element;
   };
 
+  const dispatchPointerEvent = (element, type) => {
+    if (typeof PointerEvent === 'undefined') return;
+
+    element.dispatchEvent(new PointerEvent(type, {
+      bubbles: true,
+      cancelable: true,
+      composed: true,
+      pointerId: 1,
+      pointerType: 'mouse',
+      isPrimary: true,
+      button: 0,
+      buttons: type === 'pointerdown' ? 1 : 0
+    }));
+  };
+
+  const dispatchMouseEvent = (element, type) => {
+    if (typeof MouseEvent === 'undefined') return;
+
+    element.dispatchEvent(new MouseEvent(type, {
+      bubbles: true,
+      cancelable: true,
+      composed: true,
+      button: 0,
+      buttons: type === 'mousedown' ? 1 : 0
+    }));
+  };
+
   const clickElement = async (step) => {
     const element = await waitForElement(step.selector, getTimeout(step));
     if (!element) throw new Error(`Element not found: ${step.selector}`);
+
+    dispatchPointerEvent(element, 'pointerdown');
+    dispatchMouseEvent(element, 'mousedown');
+    if (typeof element.focus === 'function') element.focus();
+    dispatchPointerEvent(element, 'pointerup');
+    dispatchMouseEvent(element, 'mouseup');
     element.click();
   };
 

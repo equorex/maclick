@@ -6,12 +6,19 @@ const assert = require('assert');
 const errors = [];
 const logs = [];
 const clicks = [];
+const dispatched = [];
 const events = [];
 const focuses = [];
 const blurs = [];
 
 const elements = {};
-function makeElement(name) { return { click() { clicks.push(name); } }; }
+function makeElement(name) {
+  return {
+    click() { clicks.push(name); },
+    focus() {},
+    dispatchEvent(event) { dispatched.push({ name, type: event.type, bubbles: event.bubbles }); }
+  };
+}
 elements['#a'] = makeElement('#a');
 elements['#submit'] = makeElement('#submit');
 
@@ -54,6 +61,18 @@ const sandbox = {
       this.bubbles = !!(options && options.bubbles);
     }
   },
+  MouseEvent: class {
+    constructor(type, options) {
+      this.type = type;
+      this.bubbles = !!(options && options.bubbles);
+    }
+  },
+  PointerEvent: class {
+    constructor(type, options) {
+      this.type = type;
+      this.bubbles = !!(options && options.bubbles);
+    }
+  },
   console: { log: message => logs.push(message), error: message => errors.push(message), warn: () => {} },
   setTimeout,
   clearTimeout
@@ -68,6 +87,12 @@ const executeTask = context.executeTask;
 (async () => {
   await executeTask({ defaultTimeout: 300, steps: [{ type: 'click', selector: '#a' }, { type: 'wait_timeout', ms: 10 }] });
   assert.deepStrictEqual(clicks, ['#a'], 'click executed');
+  assert.deepStrictEqual(dispatched, [
+    { name: '#a', type: 'pointerdown', bubbles: true },
+    { name: '#a', type: 'mousedown', bubbles: true },
+    { name: '#a', type: 'pointerup', bubbles: true },
+    { name: '#a', type: 'mouseup', bubbles: true }
+  ], 'pointer and mouse sequence dispatched before click');
   assert.strictEqual(errors.length, 0, 'no errors');
 
   errors.length = 0;
@@ -79,9 +104,11 @@ const executeTask = context.executeTask;
 
   errors.length = 0;
   clicks.length = 0;
+  dispatched.length = 0;
   setTimeout(() => { elements['#b'] = makeElement('#b'); }, 150);
   await executeTask({ defaultTimeout: 2000, steps: [{ type: 'wait_element', selector: '#b' }] });
   assert.deepStrictEqual(clicks, ['#b'], 'wait_element waits then clicks');
+  assert.deepStrictEqual(dispatched.map(e => e.type), ['pointerdown', 'mousedown', 'pointerup', 'mouseup'], 'wait_element dispatches the click sequence');
   assert.strictEqual(errors.length, 0, 'no errors on wait_element');
 
   errors.length = 0;
