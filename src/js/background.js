@@ -106,9 +106,11 @@ function formatDate(date) {
 }
 
 async function saveRecordedTask(url, steps) {
-  if (!Array.isArray(steps) || steps.length === 0) return null;
+  if (!Array.isArray(steps) || steps.length === 0) return { task: null, error: 'empty' };
 
   const host = getHostname(url);
+  if (!host) return { task: null, error: 'no_host' };
+
   const task = {
     id: crypto.randomUUID(),
     name: `Task from ${formatDate(new Date())} (${host})`,
@@ -119,7 +121,7 @@ async function saveRecordedTask(url, steps) {
     steps: [{ type: 'wait_page_load' }, ...steps]
   };
 
-  return taskStorage.add(task);
+  return { task: await taskStorage.add(task), error: null };
 }
 
 async function getTabUrl(tabId) {
@@ -138,10 +140,10 @@ async function resolveTabUrl(sender, tabId) {
 
 async function finishRecording(sender, tabId, session) {
   const url = await resolveTabUrl(sender, tabId);
-  const task = await saveRecordedTask(url, session ? session.steps : []);
+  const result = await saveRecordedTask(url, session ? session.steps : []);
   await removeSession(tabId);
   await clearRecordingIndicator(tabId);
-  return task;
+  return result;
 }
 
 async function handleStopRecording(message, sender) {
@@ -155,8 +157,8 @@ async function handleStopRecording(message, sender) {
   }
 
   const session = await getSession(tabId);
-  const task = await finishRecording(sender, tabId, session);
-  return { status: 'stopped', task };
+  const result = await finishRecording(sender, tabId, session);
+  return { status: 'stopped', task: result.task, error: result.error };
 }
 
 async function handleRecordedStep(message, sender) {
@@ -178,8 +180,8 @@ async function handleRecordingStopped(message, sender) {
   const session = await getSession(tabId);
   if (!session || !session.recording) return { status: 'ignored' };
 
-  const task = await finishRecording(sender, tabId, session);
-  return { status: 'stopped', task };
+  const result = await finishRecording(sender, tabId, session);
+  return { status: 'stopped', task: result.task, error: result.error };
 }
 
 async function handleGetRecordingState(message, sender) {

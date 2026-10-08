@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 const assert = require('assert');
+const { webcrypto } = require('crypto');
 
 function createClassList() {
   const classes = new Set();
@@ -134,6 +135,8 @@ function createHarness(options = {}) {
     document,
     browser,
     console,
+    crypto: webcrypto,
+    URL,
     window: { close() { state.closed = true; } },
     setTimeout() { return 0; },
     clearTimeout() {}
@@ -398,6 +401,72 @@ function createHarness(options = {}) {
   assert.strictEqual(await noApi.context.__t.hasHostAccess(), true, 'assumes access without permissions API');
   await noApi.context.__t.updatePermissionBanner();
   assert.strictEqual(noApi.elements['permission-banner'].hidden, true, 'banner hidden without permissions API');
+
+  const technicalStart = createHarness({ url: 'about:preferences' });
+  await technicalStart.context.__t.toggleRecord();
+  assert.strictEqual(technicalStart.state.sent.length, 0, 'recording not started on technical domain');
+  assert.ok(technicalStart.elements['status-message'].textContent.includes('technical'), 'technical start warning shown');
+
+  const noHostStop = createHarness({ tasks: [] });
+  noHostStop.context.__t.isRecording = true;
+  noHostStop.state.responses.push({ status: 'stopped', task: null, error: 'no_host' });
+  await noHostStop.context.__t.toggleRecord();
+  assert.ok(noHostStop.elements['status-message'].textContent.includes('technical'), 'no_host stop warning shown');
+
+  const technicalRun = createHarness({
+    url: 'about:preferences',
+    tasks: [{ id: 'src', name: 'Login', host: 'other.com', createdAt: Date.now(), steps: [] }]
+  });
+  technicalRun.context.__t.currentHost = '';
+  await technicalRun.context.__t.runTask('src');
+  assert.strictEqual(technicalRun.state.executed, false, 'run blocked on technical domain');
+  assert.strictEqual(technicalRun.state.tasks.length, 1, 'no copy on technical domain');
+  assert.ok(technicalRun.elements['status-message'].textContent.includes('technical'), 'technical run warning shown');
+
+  const foreign = createHarness({
+    url: 'https://example.com/page',
+    tasks: [{
+      id: 'src',
+      name: 'Login',
+      host: 'other.com',
+      description: 'desc',
+      defaultTimeout: 500,
+      createdAt: 1,
+      steps: [{ type: 'click', selector: '#a' }]
+    }]
+  });
+  foreign.context.__t.currentHost = 'example.com';
+  foreign.context.__t.domainFilter = 'all';
+  await foreign.context.__t.runTask('src');
+
+  assert.strictEqual(foreign.state.executed, true, 'foreign task executed');
+  assert.strictEqual(foreign.state.tasks.length, 2, 'copy created for current domain');
+  const copy = foreign.state.tasks.find(task => task.host === 'example.com');
+  assert.ok(copy, 'copy stored on current domain');
+  assert.strictEqual(copy.sourceId, 'src', 'copy tracks its source');
+  assert.strictEqual(copy.name, 'Login', 'copy keeps name');
+  assert.strictEqual(copy.defaultTimeout, 500, 'copy keeps default timeout');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(copy.steps)), [{ type: 'click', selector: '#a' }], 'copy keeps steps');
+  assert.ok(Number.isFinite(copy.lastUsedAt), 'copy marked as used');
+  assert.strictEqual(foreign.context.__t.domainFilter, 'domain', 'filter reset to current domain');
+  assert.strictEqual(foreign.state.prefs.maclick_domain_filter, 'domain', 'filter persisted');
+  assert.strictEqual(foreign.elements['last-used-section'].hidden, false, 'last used shown after copy');
+  assert.strictEqual(foreign.elements['last-used-task'].children[0].children[0].children[0].textContent, 'Login', 'last used is the copy');
+  assert.strictEqual(foreign.elements['task-list'].children.length, 1, 'only current domain task listed');
+
+  await foreign.context.__t.runTask('src');
+  assert.strictEqual(foreign.state.tasks.length, 2, 'existing copy reused on repeat run');
+  assert.strictEqual(foreign.state.tasks.find(task => task.host === 'example.com').id, copy.id, 'same copy reused');
+
+  const sameDomain = createHarness({
+    tasks: [{ id: 't1', name: 'Same', host: 'example.com', createdAt: Date.now(), steps: [] }]
+  });
+  sameDomain.context.__t.currentHost = 'example.com';
+  sameDomain.context.__t.domainFilter = 'all';
+  await sameDomain.context.__t.runTask('t1');
+  assert.strictEqual(sameDomain.state.tasks.length, 1, 'no copy for same domain');
+  assert.strictEqual(sameDomain.context.__t.domainFilter, 'all', 'filter unchanged for same domain');
+  assert.ok(Number.isFinite(sameDomain.state.tasks[0].lastUsedAt), 'same domain marked as used');
 
   console.log('popup record tests passed');
 })().catch(e => {

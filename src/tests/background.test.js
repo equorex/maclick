@@ -24,7 +24,8 @@ const actionCalls = [];
 const tabsById = {
   1: { id: 1, url: 'https://example.com/page' },
   3: { id: 3, url: 'https://esc.example/' },
-  5: { id: 5, url: 'https://race.example/' }
+  5: { id: 5, url: 'https://race.example/' },
+  7: { id: 7, url: 'about:preferences' }
 };
 
 const browser = {
@@ -122,7 +123,15 @@ vm.runInContext(fs.readFileSync(path.join(jsDir, 'background.js'), 'utf8'), cont
 
   res = await listener({ type: 'STOP_RECORDING', tabId: 1 }, popup);
   assert.strictEqual(res.task, null, 'empty recording not saved');
+  assert.strictEqual(res.error, 'empty', 'empty recording reason reported');
   assert.strictEqual((localStore.maclick_tasks || []).length, 1, 'task count unchanged');
+
+  await listener({ type: 'START_RECORDING', tabId: 7 }, popup);
+  await listener({ type: 'RECORDED_STEP', step: { type: 'click', selector: '#t' } }, contentSender(7));
+  res = await listener({ type: 'STOP_RECORDING', tabId: 7 }, popup);
+  assert.strictEqual(res.task, null, 'technical domain task not saved');
+  assert.strictEqual(res.error, 'no_host', 'technical domain reason reported');
+  assert.strictEqual((localStore.maclick_tasks || []).length, 1, 'task count unchanged for technical domain');
 
   await listener({ type: 'START_RECORDING', tabId: 3 }, popup);
   await listener({ type: 'RECORDED_STEP', step: { type: 'click', selector: '#x' } }, contentSender(3));

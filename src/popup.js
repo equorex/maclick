@@ -207,6 +207,11 @@ async function toggleRecord() {
     }
 
     if (!isRecording) {
+      if (!getHostFromUrl(tab.url)) {
+        showStatus('Cannot record on this page (technical domain)', 'error');
+        return;
+      }
+
       const result = await browser.runtime.sendMessage({ type: 'START_RECORDING', tabId: tab.id });
       if (!result || result.status !== 'started') {
         showStatus('Failed to start recording: ' + ((result && result.error) || 'unknown error'), 'error');
@@ -225,6 +230,8 @@ async function toggleRecord() {
       if (result && result.task) {
         showStatus(`Task "${result.task.name}" saved`, 'success');
         renderTaskList();
+      } else if (result && result.error === 'no_host') {
+        showStatus('Cannot save a task for this page (technical domain)', 'error');
       } else {
         showStatus('Recording is empty', 'info');
       }
@@ -772,6 +779,29 @@ function createTaskButton(iconName, label, className, onClick) {
   return button;
 }
 
+async function ensureTaskForCurrentHost(task, tasks) {
+  if (task.host === currentHost) return { task, copied: false };
+
+  const rootId = task.sourceId || task.id;
+  const existing = tasks.find(item => item.host === currentHost && (item.sourceId || item.id) === rootId);
+  if (existing) return { task: existing, copied: false };
+
+  const copy = {
+    id: crypto.randomUUID(),
+    name: task.name,
+    host: currentHost,
+    description: task.description || '',
+    defaultTimeout: task.defaultTimeout || TASK_DEFAULT_TIMEOUT,
+    createdAt: Date.now(),
+    lastUsedAt: Date.now(),
+    sourceId: rootId,
+    steps: Array.isArray(task.steps) ? task.steps.map(step => ({ ...step })) : []
+  };
+
+  await taskStorage.add(copy);
+  return { task: copy, copied: true };
+}
+
 async function runTask(taskId) {
   const tasks = await taskStorage.getAll();
   const task = tasks.find(t => t.id === taskId);
@@ -787,15 +817,31 @@ async function runTask(taskId) {
     return;
   }
 
+  if (!currentHost) {
+    showStatus('Cannot run tasks on this page (technical domain)', 'error');
+    return;
+  }
+
+  const isForeign = task.host !== currentHost;
+
   try {
+    const { task: runnable, copied } = await ensureTaskForCurrentHost(task, tasks);
+
     await browser.scripting.executeScript({
       target: { tabId: tab.id },
       func: executeTask,
-      args: [task]
+      args: [runnable]
     });
 
-    await taskStorage.update(task.id, { lastUsedAt: Date.now() });
-    showStatus(`Task "${task.name}" is running`, 'success');
+    if (!copied) await taskStorage.update(runnable.id, { lastUsedAt: Date.now() });
+
+    if (isForeign) {
+      domainFilter = 'domain';
+      await prefsStorage.setDomainFilter('domain');
+      updateDomainFilterUi();
+    }
+
+    showStatus(copied ? `Task copied to ${currentHost} and running` : `Task "${runnable.name}" is running`, 'success');
     await renderTaskList();
   } catch (e) {
     console.error(e);
