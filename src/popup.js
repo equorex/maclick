@@ -2,16 +2,36 @@ let isRecording = false;
 let currentEditingTaskId = null;
 let editingSteps = [];
 let statusTimer = null;
+let domainFilter = DOMAIN_FILTER_DEFAULT;
+let currentHost = '';
+let dragSourceIndex = null;
+
+const editorRefs = {
+  form: null,
+  name: null,
+  desc: null,
+  timeout: null,
+  steps: null,
+  typeSelect: null
+};
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const ICON_PATHS = {
   play: 'M8 5v14l11-7z',
   edit: 'M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z',
   trash: 'M6 19a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z',
-  arrowUp: 'M7.41 15.41 12 10.83l4.59 4.58L18 14l-6-6-6 6z',
-  arrowDown: 'M7.41 8.59 12 13.17l4.59-4.58L18 10l-6 6-6-6z',
-  close: 'M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z'
+  close: 'M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z',
+  plus: 'M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z',
+  drag: 'M11 18c0 1.1-.9 2-2 2s-2-.9-2-2 .9-2 2-2 2 .9 2 2zm-2-8c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0-6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm6 4c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z'
 };
+
+const STEP_TYPES = [
+  ['click', 'Click'],
+  ['input_text', 'Input text'],
+  ['wait_element', 'Wait + click'],
+  ['wait_timeout', 'Pause'],
+  ['wait_page_load', 'Wait for load']
+];
 
 function createIcon(name) {
   const svg = document.createElementNS(SVG_NS, 'svg');
@@ -30,23 +50,45 @@ function createIcon(name) {
 
 document.addEventListener('DOMContentLoaded', () => {
   const recordBtn = document.getElementById('record-btn');
-  const createForm = document.getElementById('create-task-form');
-  const cancelCreateBtn = document.getElementById('cancel-create-btn');
-
   if (recordBtn) recordBtn.addEventListener('click', toggleRecord);
-  if (createForm) createForm.addEventListener('submit', handleEditTask);
-  if (cancelCreateBtn) cancelCreateBtn.addEventListener('click', hideCreateForm);
 
-  const addStepBtn = document.getElementById('add-step-btn');
-  if (addStepBtn) addStepBtn.addEventListener('click', addStep);
-
-  checkRecordingState();
-  renderTaskList();
+  bindDomainFilter();
+  init();
 });
+
+async function init() {
+  try {
+    domainFilter = await prefsStorage.getDomainFilter();
+  } catch (e) {
+    console.error('Failed to read domain filter:', e);
+    domainFilter = DOMAIN_FILTER_DEFAULT;
+  }
+
+  currentHost = await getCurrentHost();
+  updateDomainFilterUi();
+
+  await checkRecordingState();
+  await renderTaskList();
+}
 
 async function getActiveTab() {
   const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
   return tab || null;
+}
+
+function getHostFromUrl(url) {
+  if (!url) return '';
+
+  try {
+    return new URL(url).hostname;
+  } catch (e) {
+    return '';
+  }
+}
+
+async function getCurrentHost() {
+  const tab = await getActiveTab();
+  return tab ? getHostFromUrl(tab.url) : '';
 }
 
 function showStatus(message, type = 'info') {
@@ -132,26 +174,70 @@ async function toggleRecord() {
   }
 }
 
+function bindDomainFilter() {
+  const group = document.getElementById('domain-filter');
+  if (!group || !group.children) return;
+
+  for (const button of group.children) {
+    if (!button.getAttribute || button.getAttribute('data-filter') === null) continue;
+    button.addEventListener('click', () => selectDomainFilter(button.getAttribute('data-filter')));
+  }
+}
+
+async function selectDomainFilter(value) {
+  if (value !== 'domain' && value !== 'all') return;
+
+  domainFilter = value;
+  try {
+    await prefsStorage.setDomainFilter(value);
+  } catch (e) {
+    console.error('Failed to save domain filter:', e);
+  }
+
+  updateDomainFilterUi();
+  await renderTaskList();
+}
+
+function effectiveFilter() {
+  return currentHost ? domainFilter : 'all';
+}
+
+function updateDomainFilterUi() {
+  const group = document.getElementById('domain-filter');
+  if (!group || !group.children) return;
+
+  const hostAvailable = !!currentHost;
+  const active = effectiveFilter();
+
+  for (const button of group.children) {
+    if (!button.getAttribute) continue;
+    const value = button.getAttribute('data-filter');
+    if (!value) continue;
+
+    const isActive = value === active;
+    button.classList.toggle('active', isActive);
+    button.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+    button.disabled = value === 'domain' && !hostAvailable;
+  }
+}
+
 function readDefaultTimeout() {
-  const input = document.getElementById('task-timeout');
+  const input = editorRefs.timeout;
   const value = input ? parseInt(input.value, 10) : NaN;
   return Number.isFinite(value) && value >= 0 ? value : TASK_DEFAULT_TIMEOUT;
 }
 
-function showEditForm() {
-  document.getElementById('create-task-form').classList.add('visible');
-}
-
-function hideCreateForm() {
-  document.getElementById('create-task-form').classList.remove('visible');
-
-  currentEditingTaskId = null;
-  editingSteps = [];
-  renderSteps();
+function resetEditor() {
+  editorRefs.form = null;
+  editorRefs.name = null;
+  editorRefs.desc = null;
+  editorRefs.timeout = null;
+  editorRefs.steps = null;
+  editorRefs.typeSelect = null;
 }
 
 function renderSteps() {
-  const container = document.getElementById('editStepsList');
+  const container = editorRefs.steps;
   if (!container) return;
 
   container.textContent = '';
@@ -163,6 +249,18 @@ function renderSteps() {
 function createStepRow(step, idx) {
   const row = document.createElement('div');
   row.className = 'step-row';
+  row.draggable = true;
+  row.dataset.index = String(idx);
+  row.addEventListener('dragstart', event => handleDragStart(event, idx, row));
+  row.addEventListener('dragover', event => handleDragOver(event, row));
+  row.addEventListener('dragleave', () => row.classList.remove('drag-over'));
+  row.addEventListener('drop', event => handleDrop(event, idx, row));
+  row.addEventListener('dragend', () => handleDragEnd(row));
+
+  const handle = document.createElement('span');
+  handle.className = 'drag-handle';
+  handle.title = 'Drag to reorder';
+  handle.appendChild(createIcon('drag'));
 
   const number = document.createElement('span');
   number.className = 'step-number';
@@ -171,9 +269,8 @@ function createStepRow(step, idx) {
   const label = document.createElement('span');
   label.className = 'step-label';
 
+  row.appendChild(handle);
   row.appendChild(number);
-  row.appendChild(createIconButton('arrowUp', 'Move up', idx === 0, () => moveStep(idx, -1)));
-  row.appendChild(createIconButton('arrowDown', 'Move down', idx === editingSteps.length - 1, () => moveStep(idx, 1)));
 
   if (step.type === 'click' || step.type === 'wait_element') {
     label.textContent = step.type === 'click' ? 'Click:' : 'Wait + click:';
@@ -265,11 +362,50 @@ function createIconButton(iconName, title, disabled, onClick) {
   return button;
 }
 
-function moveStep(idx, delta) {
-  const target = idx + delta;
-  if (target < 0 || target >= editingSteps.length) return;
+function handleDragStart(event, idx, row) {
+  const tag = event.target && event.target.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') {
+    event.preventDefault();
+    return;
+  }
 
-  [editingSteps[idx], editingSteps[target]] = [editingSteps[target], editingSteps[idx]];
+  dragSourceIndex = idx;
+  row.classList.add('dragging');
+
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', String(idx));
+  }
+}
+
+function handleDragOver(event, row) {
+  if (dragSourceIndex === null) return;
+
+  event.preventDefault();
+  if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+  row.classList.add('drag-over');
+}
+
+function handleDrop(event, idx, row) {
+  event.preventDefault();
+  row.classList.remove('drag-over');
+
+  if (dragSourceIndex === null) return;
+  reorderSteps(dragSourceIndex, idx);
+  dragSourceIndex = null;
+}
+
+function handleDragEnd(row) {
+  row.classList.remove('dragging');
+  dragSourceIndex = null;
+}
+
+function reorderSteps(from, to) {
+  if (from === to) return;
+  if (from < 0 || to < 0 || from >= editingSteps.length || to >= editingSteps.length) return;
+
+  const [moved] = editingSteps.splice(from, 1);
+  editingSteps.splice(to, 0, moved);
   renderSteps();
 }
 
@@ -279,7 +415,7 @@ function removeStepAt(idx) {
 }
 
 function addStep() {
-  const select = document.getElementById('step-type-select');
+  const select = editorRefs.typeSelect;
   const stepType = select ? select.value : 'click';
   const timeout = readDefaultTimeout();
 
@@ -298,44 +434,210 @@ function addStep() {
   renderSteps();
 }
 
-async function handleEditTask(e) {
-  e.preventDefault();
+async function handleEditTask(event) {
+  event.preventDefault();
 
   if (!currentEditingTaskId) return;
 
-  const name = document.getElementById('task-name').value.trim();
+  const name = editorRefs.name ? editorRefs.name.value.trim() : '';
   if (!name) {
     showStatus('Fill in the required fields', 'error');
     return;
   }
 
-  const description = document.getElementById('task-desc').value;
+  const description = editorRefs.desc ? editorRefs.desc.value : '';
   const defaultTimeout = readDefaultTimeout();
   const steps = editingSteps.map(step => ({ ...step }));
 
   const updated = await taskStorage.update(currentEditingTaskId, { name, description, defaultTimeout, steps });
 
-  if (!updated) {
+  currentEditingTaskId = null;
+  editingSteps = [];
+  resetEditor();
+  await renderTaskList();
+
+  if (updated) {
+    showStatus('Task saved', 'success');
+  } else {
     showStatus('Task not found', 'error');
-    hideCreateForm();
-    return;
+  }
+}
+
+async function cancelEdit() {
+  currentEditingTaskId = null;
+  editingSteps = [];
+  resetEditor();
+  await renderTaskList();
+}
+
+function scrollEditorIntoView() {
+  const form = editorRefs.form;
+  if (form && typeof form.scrollIntoView === 'function') {
+    form.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+}
+
+function createTaskEditForm(task) {
+  const form = document.createElement('form');
+  form.className = 'edit-form';
+  form.addEventListener('submit', handleEditTask);
+
+  const title = document.createElement('h3');
+  title.className = 'form-title';
+  title.textContent = 'Edit task';
+  form.appendChild(title);
+
+  const nameInput = document.createElement('input');
+  nameInput.type = 'text';
+  nameInput.className = 'field-input';
+  nameInput.placeholder = 'Enter task name';
+  nameInput.required = true;
+  nameInput.value = task.name;
+  form.appendChild(createField('Name:', nameInput));
+
+  const descInput = document.createElement('textarea');
+  descInput.className = 'field-input';
+  descInput.rows = 2;
+  descInput.value = task.description || '';
+  form.appendChild(createField('Description:', descInput));
+
+  const timeoutInput = document.createElement('input');
+  timeoutInput.type = 'number';
+  timeoutInput.min = '0';
+  timeoutInput.className = 'field-input';
+  timeoutInput.value = task.defaultTimeout || TASK_DEFAULT_TIMEOUT;
+  form.appendChild(createField('Default timeout (ms):', timeoutInput));
+
+  const stepsHeader = document.createElement('div');
+  stepsHeader.className = 'steps-header';
+  const stepsTitle = document.createElement('span');
+  stepsTitle.className = 'steps-title';
+  stepsTitle.textContent = 'Steps:';
+  const stepsList = document.createElement('div');
+  stepsList.className = 'steps-list';
+  stepsHeader.appendChild(stepsTitle);
+  stepsHeader.appendChild(stepsList);
+  form.appendChild(stepsHeader);
+
+  const typeSelect = document.createElement('select');
+  typeSelect.className = 'step-type-select';
+  for (const [value, text] of STEP_TYPES) {
+    const option = document.createElement('option');
+    option.value = value;
+    option.textContent = text;
+    typeSelect.appendChild(option);
   }
 
-  hideCreateForm();
-  renderTaskList();
-  showStatus('Task saved', 'success');
+  const addStepBtn = document.createElement('button');
+  addStepBtn.type = 'button';
+  addStepBtn.className = 'btn-add-step';
+  addStepBtn.appendChild(createIcon('plus'));
+  const addStepLabel = document.createElement('span');
+  addStepLabel.textContent = 'Add step';
+  addStepBtn.appendChild(addStepLabel);
+  addStepBtn.addEventListener('click', addStep);
+
+  const addRow = document.createElement('div');
+  addRow.className = 'step-add-row';
+  addRow.appendChild(typeSelect);
+  addRow.appendChild(addStepBtn);
+  form.appendChild(addRow);
+
+  const saveBtn = document.createElement('button');
+  saveBtn.type = 'submit';
+  saveBtn.className = 'btn-primary';
+  saveBtn.textContent = 'Save';
+
+  const cancelBtn = document.createElement('button');
+  cancelBtn.type = 'button';
+  cancelBtn.className = 'btn-secondary';
+  cancelBtn.textContent = 'Cancel';
+  cancelBtn.addEventListener('click', cancelEdit);
+
+  const buttonRow = document.createElement('div');
+  buttonRow.className = 'button-row';
+  buttonRow.appendChild(saveBtn);
+  buttonRow.appendChild(cancelBtn);
+  form.appendChild(buttonRow);
+
+  editorRefs.form = form;
+  editorRefs.name = nameInput;
+  editorRefs.desc = descInput;
+  editorRefs.timeout = timeoutInput;
+  editorRefs.steps = stepsList;
+  editorRefs.typeSelect = typeSelect;
+
+  renderSteps();
+  return form;
+}
+
+function createField(labelText, control) {
+  const field = document.createElement('label');
+  field.className = 'field';
+
+  const label = document.createElement('span');
+  label.className = 'field-label';
+  label.textContent = labelText;
+
+  field.appendChild(label);
+  field.appendChild(control);
+  return field;
+}
+
+function pickLastUsed(tasks) {
+  let best = null;
+  for (const task of tasks) {
+    if (!Number.isFinite(task.lastUsedAt)) continue;
+    if (!best || task.lastUsedAt > best.lastUsedAt) best = task;
+  }
+  return best;
+}
+
+function filterTasks(tasks, filter, host) {
+  if (filter === 'domain' && host) {
+    return tasks.filter(task => task.host === host);
+  }
+  return tasks;
 }
 
 async function renderTaskList() {
   const list = document.getElementById('task-list');
-  const tasks = await taskStorage.getAll();
+  if (!list) return;
 
+  const tasks = await taskStorage.getAll();
+  renderLastUsed(tasks);
+  renderTasks(filterTasks(tasks, effectiveFilter(), currentHost), tasks.length > 0);
+}
+
+function renderLastUsed(tasks) {
+  const section = document.getElementById('last-used-section');
+  const container = document.getElementById('last-used-task');
+  if (!section || !container) return;
+
+  const task = pickLastUsed(tasks);
+  container.textContent = '';
+
+  if (!task) {
+    section.hidden = true;
+    return;
+  }
+
+  section.hidden = false;
+  const actions = [
+    createTaskButton('play', 'Run', 'btn-run', () => runTask(task.id)),
+    createTaskButton('edit', 'Edit', 'btn-edit', () => editTask(task.id))
+  ];
+  container.appendChild(buildTaskSummary(task, actions, 'is-recent'));
+}
+
+function renderTasks(tasks, hasAnyTasks) {
+  const list = document.getElementById('task-list');
   list.textContent = '';
 
   if (tasks.length === 0) {
     const empty = document.createElement('p');
     empty.className = 'empty-list';
-    empty.textContent = 'No saved tasks';
+    empty.textContent = hasAnyTasks ? 'No tasks for this domain' : 'No saved tasks';
     list.appendChild(empty);
     return;
   }
@@ -346,17 +648,45 @@ async function renderTaskList() {
 }
 
 function createTaskCard(task) {
+  if (task.id === currentEditingTaskId) {
+    const item = document.createElement('div');
+    item.className = 'task-card is-editing';
+    item.appendChild(createTaskEditForm(task));
+    return item;
+  }
+
+  const actions = [
+    createTaskButton('play', 'Run', 'btn-run', () => runTask(task.id)),
+    createTaskButton('edit', 'Edit', 'btn-edit', () => editTask(task.id)),
+    createTaskButton('trash', 'Delete', 'btn-delete', () => deleteTask(task.id))
+  ];
+  return buildTaskSummary(task, actions);
+}
+
+function buildTaskSummary(task, actions, extraClass = '') {
   const item = document.createElement('div');
-  item.className = 'task-card';
+  item.className = extraClass ? `task-card ${extraClass}` : 'task-card';
+
+  const head = document.createElement('div');
+  head.className = 'task-head';
 
   const name = document.createElement('strong');
   name.textContent = task.name;
-  item.appendChild(name);
+  name.title = task.name;
+  head.appendChild(name);
+
+  const actionsEl = document.createElement('div');
+  actionsEl.className = 'task-actions';
+  actions.forEach(button => actionsEl.appendChild(button));
+  head.appendChild(actionsEl);
+
+  item.appendChild(head);
 
   if (task.description) {
     const description = document.createElement('div');
     description.className = 'task-description';
     description.textContent = task.description;
+    description.title = task.description;
     item.appendChild(description);
   }
 
@@ -366,28 +696,16 @@ function createTaskCard(task) {
   meta.textContent = `${task.host || ''} • ${date.toLocaleString()}`;
   item.appendChild(meta);
 
-  const actions = document.createElement('div');
-  actions.className = 'task-actions';
-  actions.appendChild(createTaskButton('play', 'Run', 'btn-run', () => runTask(task.id)));
-  actions.appendChild(createTaskButton('edit', 'Edit', 'btn-edit', () => editTask(task.id)));
-  actions.appendChild(createTaskButton('trash', 'Delete', 'btn-delete', () => deleteTask(task.id)));
-  item.appendChild(actions);
-
   return item;
 }
 
 function createTaskButton(iconName, label, className, onClick) {
   const button = document.createElement('button');
   button.type = 'button';
-  button.className = className;
+  button.className = `btn-icon ${className}`;
+  button.title = label;
   button.setAttribute('aria-label', label);
   button.appendChild(createIcon(iconName));
-
-  const text = document.createElement('span');
-  text.className = 'btn-label';
-  text.textContent = label;
-  button.appendChild(text);
-
   button.addEventListener('click', onClick);
   return button;
 }
@@ -414,7 +732,9 @@ async function runTask(taskId) {
       args: [task]
     });
 
+    await taskStorage.update(task.id, { lastUsedAt: Date.now() });
     showStatus(`Task "${task.name}" is running`, 'success');
+    await renderTaskList();
   } catch (e) {
     console.error(e);
     showStatus('Run failed: ' + e.message, 'error');
@@ -423,8 +743,14 @@ async function runTask(taskId) {
 
 async function deleteTask(taskId) {
   await taskStorage.remove(taskId);
-  hideCreateForm();
-  renderTaskList();
+
+  if (currentEditingTaskId === taskId) {
+    currentEditingTaskId = null;
+    editingSteps = [];
+    resetEditor();
+  }
+
+  await renderTaskList();
 }
 
 async function editTask(taskId) {
@@ -439,10 +765,6 @@ async function editTask(taskId) {
   currentEditingTaskId = taskId;
   editingSteps = Array.isArray(task.steps) ? task.steps.map(step => ({ ...step })) : [];
 
-  document.getElementById('task-name').value = task.name;
-  document.getElementById('task-desc').value = task.description || '';
-  document.getElementById('task-timeout').value = task.defaultTimeout || TASK_DEFAULT_TIMEOUT;
-
-  showEditForm();
-  renderSteps();
+  await renderTaskList();
+  scrollEditorIntoView();
 }

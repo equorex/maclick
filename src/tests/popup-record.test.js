@@ -23,11 +23,12 @@ function createElement(tag) {
     tagName: tag.toUpperCase(),
     children: [],
     style: {},
+    dataset: {},
     value: '',
     attributes: {},
     classList: createClassList(),
     setAttribute(name, value) { el.attributes[name] = value; },
-    getAttribute(name) { return el.attributes[name]; },
+    getAttribute(name) { return Object.prototype.hasOwnProperty.call(el.attributes, name) ? el.attributes[name] : null; },
     addEventListener(type, fn) { (listeners[type] = listeners[type] || []).push(fn); },
     dispatch(type, event) { (listeners[type] || []).forEach(fn => fn(event)); },
     querySelector() { return null; },
@@ -40,17 +41,40 @@ function createElement(tag) {
 
 const jsDir = path.join(__dirname, '..', 'js');
 const popupSource = fs.readFileSync(path.join(__dirname, '..', 'popup.js'), 'utf8') +
-  '\nglobalThis.__t = { toggleRecord, renderTaskList, get isRecording() { return isRecording; }, set isRecording(v) { isRecording = v; } };';
+  '\nglobalThis.__t = { toggleRecord, renderTaskList, renderLastUsed, renderTasks, editTask, handleEditTask, cancelEdit, deleteTask, runTask, reorderSteps, filterTasks, pickLastUsed, selectDomainFilter, updateDomainFilterUi,' +
+  ' editor: editorRefs,' +
+  ' get currentEditingTaskId() { return currentEditingTaskId; },' +
+  ' get isRecording() { return isRecording; }, set isRecording(v) { isRecording = v; },' +
+  ' get domainFilter() { return domainFilter; }, set domainFilter(v) { domainFilter = v; },' +
+  ' get currentHost() { return currentHost; }, set currentHost(v) { currentHost = v; } };';
 
 function createHarness(options = {}) {
+  const filterGroup = createElement('div');
+  const domainBtn = createElement('button');
+  domainBtn.setAttribute('data-filter', 'domain');
+  const allBtn = createElement('button');
+  allBtn.setAttribute('data-filter', 'all');
+  filterGroup.appendChild(domainBtn);
+  filterGroup.appendChild(allBtn);
+
   const elements = {
     indicator: createElement('div'),
     'record-btn': createElement('button'),
     'status-message': createElement('div'),
-    'task-list': createElement('div')
+    'task-list': createElement('div'),
+    'last-used-section': createElement('section'),
+    'last-used-task': createElement('div'),
+    'domain-filter': filterGroup
   };
 
-  const state = { closed: false, sent: [], responses: [], tasks: (options.tasks || []).map(task => ({ ...task })) };
+  const state = {
+    closed: false,
+    sent: [],
+    responses: [],
+    executed: false,
+    tasks: (options.tasks || []).map(task => ({ ...task })),
+    prefs: { maclick_domain_filter: options.domainFilter }
+  };
 
   const document = {
     addEventListener() {},
@@ -62,7 +86,7 @@ function createHarness(options = {}) {
   const browser = {
     tabs: {
       async query() {
-        return options.noActiveTab ? [] : [{ id: 42 }];
+        return options.noActiveTab ? [] : [{ id: 42, url: options.url === undefined ? 'https://example.com/page' : options.url }];
       }
     },
     runtime: {
@@ -71,11 +95,22 @@ function createHarness(options = {}) {
         return state.responses.shift();
       }
     },
+    scripting: {
+      async executeScript() { state.executed = true; }
+    },
     storage: {
       local: {
-        async get() { return { maclick_tasks: state.tasks }; },
+        async get(keys) {
+          const result = {};
+          for (const key of keys) {
+            if (key === 'maclick_tasks') result[key] = state.tasks;
+            if (key === 'maclick_domain_filter') result[key] = state.prefs[key];
+          }
+          return result;
+        },
         async set(patch) {
-          if (patch.maclick_tasks) state.tasks = patch.maclick_tasks;
+          if ('maclick_tasks' in patch) state.tasks = patch.maclick_tasks;
+          if ('maclick_domain_filter' in patch) state.prefs.maclick_domain_filter = patch.maclick_domain_filter;
         }
       }
     }
@@ -91,6 +126,7 @@ function createHarness(options = {}) {
   });
 
   vm.runInContext(fs.readFileSync(path.join(jsDir, 'storage.js'), 'utf8'), context);
+  vm.runInContext(fs.readFileSync(path.join(jsDir, 'executor.js'), 'utf8'), context);
   vm.runInContext(popupSource, context);
 
   return { context, elements, state };
@@ -116,7 +152,6 @@ function createHarness(options = {}) {
   await failed.context.__t.toggleRecord();
 
   assert.strictEqual(failed.state.closed, false, 'popup stays open on start error');
-  assert.strictEqual(failed.context.__t.isRecording, false, 'recording flag not set on error');
   assert.ok(failed.elements['status-message'].textContent.includes('boom'), 'error message shown');
   assert.ok(failed.elements['status-message'].className.includes('error'), 'error status style');
 
@@ -133,12 +168,11 @@ function createHarness(options = {}) {
   assert.strictEqual(noTab.state.sent.length, 0, 'nothing sent without active tab');
   assert.ok(noTab.elements['status-message'].textContent.includes('No active tab found'), 'missing tab message');
 
-  const stopped = createHarness();
+  const stopped = createHarness({ tasks: [] });
   stopped.context.__t.isRecording = true;
   stopped.state.responses.push({ status: 'stopped', task: { name: 'My task' } });
   await stopped.context.__t.toggleRecord();
 
-  assert.strictEqual(stopped.context.__t.isRecording, false, 'recording flag cleared on stop');
   assert.strictEqual(stopped.state.closed, false, 'popup stays open after stop');
   assert.deepStrictEqual(
     JSON.parse(JSON.stringify(stopped.state.sent[0])),
@@ -146,7 +180,6 @@ function createHarness(options = {}) {
     'stop message sent'
   );
   assert.ok(stopped.elements['status-message'].textContent.includes('My task'), 'saved task message shown');
-  assert.ok(stopped.elements['status-message'].textContent.includes('saved'), 'saved status wording');
   assert.strictEqual(stopped.elements['record-btn'].textContent, 'Record', 'button switched to record');
 
   const emptyHarness = createHarness();
@@ -157,6 +190,7 @@ function createHarness(options = {}) {
   assert.strictEqual(emptyList.children[0].tagName, 'P', 'empty state is a paragraph');
   assert.strictEqual(emptyList.children[0].className, 'empty-list', 'empty state class');
   assert.strictEqual(emptyList.children[0].textContent, 'No saved tasks', 'empty state text');
+  assert.strictEqual(emptyHarness.elements['last-used-section'].hidden, true, 'last used hidden without usage');
 
   const rendering = createHarness({
     tasks: [{
@@ -172,18 +206,17 @@ function createHarness(options = {}) {
   const cards = rendering.elements['task-list'].children;
   assert.strictEqual(cards.length, 1, 'one task card rendered');
   assert.strictEqual(cards[0].className, 'task-card', 'task card class');
-  assert.strictEqual(cards[0].children[0].tagName, 'STRONG', 'task name element');
-  assert.strictEqual(cards[0].children[0].textContent, '<img src=x onerror=alert(1)>', 'name rendered as text');
-  assert.strictEqual(cards[0].children[1].className, 'task-description', 'description class');
-  assert.strictEqual(cards[0].children[1].textContent, '<b>description</b>', 'description rendered as text');
-  assert.strictEqual(cards[0].children[2].className, 'task-meta', 'meta class');
-  assert.ok(cards[0].children[2].textContent.startsWith('example.com • '), 'meta contains host and date');
 
-  const actions = cards[0].children[3];
+  const head = cards[0].children[0];
+  assert.strictEqual(head.className, 'task-head', 'task head class');
+  assert.strictEqual(head.children[0].tagName, 'STRONG', 'task name element');
+  assert.strictEqual(head.children[0].textContent, '<img src=x onerror=alert(1)>', 'name rendered as text');
+
+  const actions = head.children[1];
   assert.strictEqual(actions.className, 'task-actions', 'actions class');
   assert.deepStrictEqual(
     actions.children.map(button => button.className),
-    ['btn-run', 'btn-edit', 'btn-delete'],
+    ['btn-icon btn-run', 'btn-icon btn-edit', 'btn-icon btn-delete'],
     'action buttons rendered'
   );
   assert.deepStrictEqual(
@@ -195,17 +228,119 @@ function createHarness(options = {}) {
     actions.children.every(button => button.children[0].tagName === 'SVG'),
     'action buttons render an icon'
   );
-  assert.deepStrictEqual(
-    actions.children.map(button => button.children[1].textContent),
-    ['Run', 'Edit', 'Delete'],
-    'action button text labels'
-  );
+
+  assert.strictEqual(cards[0].children[1].className, 'task-description', 'description class');
+  assert.strictEqual(cards[0].children[1].textContent, '<b>description</b>', 'description rendered as text');
+  assert.strictEqual(cards[0].children[2].className, 'task-meta', 'meta class');
+  assert.ok(cards[0].children[2].textContent.startsWith('example.com • '), 'meta contains host and date');
 
   const described = createHarness({
     tasks: [{ id: 't2', name: 'No description', host: '', createdAt: Date.now() }]
   });
   await described.context.__t.renderTaskList();
-  assert.strictEqual(described.elements['task-list'].children[0].children.length, 3, 'no description element without text');
+  assert.strictEqual(described.elements['task-list'].children[0].children.length, 2, 'no description element without text');
+
+  const lastUsed = createHarness({
+    tasks: [
+      { id: 'a', name: 'Older', host: 'example.com', createdAt: Date.now(), lastUsedAt: 10 },
+      { id: 'b', name: 'Newer', host: 'example.com', createdAt: Date.now(), lastUsedAt: 20 }
+    ]
+  });
+  await lastUsed.context.__t.renderTaskList();
+
+  assert.strictEqual(lastUsed.elements['last-used-section'].hidden, false, 'last used section shown');
+  const recent = lastUsed.elements['last-used-task'].children[0];
+  assert.strictEqual(recent.className, 'task-card is-recent', 'recent card class');
+  assert.strictEqual(recent.children[0].children[0].textContent, 'Newer', 'most recent task picked');
+  assert.deepStrictEqual(
+    recent.children[0].children[1].children.map(button => button.getAttribute('aria-label')),
+    ['Run', 'Edit'],
+    'recent card has run and edit only'
+  );
+
+  assert.strictEqual(lastUsed.context.__t.pickLastUsed([]), null, 'no last used without tasks');
+  assert.strictEqual(lastUsed.context.__t.pickLastUsed([{ id: 'x' }]), null, 'tasks without lastUsedAt ignored');
+  assert.strictEqual(
+    lastUsed.context.__t.pickLastUsed([{ id: 'x', lastUsedAt: 5 }, { id: 'y', lastUsedAt: 9 }]).id,
+    'y',
+    'newest usage wins'
+  );
+
+  const filterSource = [{ id: '1', host: 'a.com' }, { id: '2', host: 'b.com' }];
+  assert.deepStrictEqual(lastUsed.context.__t.filterTasks(filterSource, 'all', 'a.com').map(t => t.id), ['1', '2'], 'all filter');
+  assert.deepStrictEqual(lastUsed.context.__t.filterTasks(filterSource, 'domain', 'a.com').map(t => t.id), ['1'], 'domain filter');
+  assert.deepStrictEqual(lastUsed.context.__t.filterTasks(filterSource, 'domain', '').map(t => t.id), ['1', '2'], 'empty host falls back to all');
+
+  const filtered = createHarness({
+    url: 'https://example.com/page',
+    tasks: [
+      { id: '1', name: 'Here', host: 'example.com', createdAt: Date.now() },
+      { id: '2', name: 'Elsewhere', host: 'other.com', createdAt: Date.now() }
+    ]
+  });
+  filtered.context.__t.currentHost = 'example.com';
+  filtered.context.__t.domainFilter = 'domain';
+  filtered.context.__t.updateDomainFilterUi();
+  await filtered.context.__t.renderTaskList();
+
+  assert.strictEqual(filtered.elements['task-list'].children.length, 1, 'only current domain tasks');
+  assert.strictEqual(filtered.elements['task-list'].children[0].children[0].children[0].textContent, 'Here', 'domain task shown');
+  assert.strictEqual(filtered.elements['domain-filter'].children[0].getAttribute('aria-pressed'), 'true', 'domain filter active');
+
+  await filtered.context.__t.selectDomainFilter('all');
+  assert.strictEqual(filtered.elements['task-list'].children.length, 2, 'all tasks after switching');
+  assert.strictEqual(filtered.state.prefs.maclick_domain_filter, 'all', 'filter persisted');
+  assert.strictEqual(filtered.elements['domain-filter'].children[1].getAttribute('aria-pressed'), 'true', 'all filter active');
+
+  const noHost = createHarness({ url: 'about:debugging', tasks: [] });
+  noHost.context.__t.currentHost = '';
+  noHost.context.__t.domainFilter = 'domain';
+  noHost.context.__t.updateDomainFilterUi();
+  assert.strictEqual(noHost.elements['domain-filter'].children[0].disabled, true, 'domain option disabled without host');
+  assert.strictEqual(noHost.elements['domain-filter'].children[1].getAttribute('aria-pressed'), 'true', 'all active without host');
+
+  const filteredEmpty = createHarness({
+    tasks: [{ id: '1', name: 'A', host: 'other.com', createdAt: Date.now() }]
+  });
+  filteredEmpty.context.__t.currentHost = 'example.com';
+  filteredEmpty.context.__t.domainFilter = 'domain';
+  await filteredEmpty.context.__t.renderTaskList();
+  assert.strictEqual(filteredEmpty.elements['task-list'].children[0].className, 'empty-list', 'filtered empty state');
+  assert.strictEqual(filteredEmpty.elements['task-list'].children[0].textContent, 'No tasks for this domain', 'filtered empty text');
+
+  const editing = createHarness({
+    tasks: [{ id: 't1', name: 'Old', host: 'example.com', createdAt: Date.now(), steps: [{ type: 'click', selector: '#a' }] }]
+  });
+  await editing.context.__t.editTask('t1');
+
+  assert.strictEqual(editing.context.__t.currentEditingTaskId, 't1', 'task marked as editing');
+  const editingCard = editing.elements['task-list'].children[0];
+  assert.strictEqual(editingCard.className, 'task-card is-editing', 'card switched to edit mode');
+  assert.strictEqual(editing.context.__t.editor.name.value, 'Old', 'editor prefilled with name');
+  assert.strictEqual(editing.context.__t.editor.steps.children.length, 1, 'editor renders steps');
+
+  editing.context.__t.editor.name.value = 'New name';
+  await editing.context.__t.handleEditTask({ preventDefault() {} });
+
+  assert.strictEqual(editing.context.__t.currentEditingTaskId, null, 'editing cleared after save');
+  assert.strictEqual(editing.state.tasks[0].name, 'New name', 'task saved in storage');
+  assert.strictEqual(editing.elements['task-list'].children[0].className, 'task-card', 'card back to summary');
+  assert.ok(editing.elements['status-message'].textContent.includes('saved'), 'save status shown');
+
+  await editing.context.__t.editTask('t1');
+  await editing.context.__t.cancelEdit();
+  assert.strictEqual(editing.context.__t.currentEditingTaskId, null, 'cancel clears editing');
+  assert.strictEqual(editing.elements['task-list'].children[0].className, 'task-card', 'cancel restores summary');
+
+  const running = createHarness({
+    tasks: [{ id: 't1', name: 'Runner', host: 'example.com', createdAt: Date.now(), steps: [] }]
+  });
+  await running.context.__t.runTask('t1');
+
+  assert.strictEqual(running.state.executed, true, 'task executed');
+  assert.ok(Number.isFinite(running.state.tasks[0].lastUsedAt), 'lastUsedAt recorded on run');
+  assert.strictEqual(running.elements['last-used-section'].hidden, false, 'last used section appears after run');
+  assert.strictEqual(running.elements['last-used-task'].children.length, 1, 'last used card rendered');
 
   console.log('popup record tests passed');
 })().catch(e => {

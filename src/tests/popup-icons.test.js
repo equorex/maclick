@@ -32,6 +32,7 @@ const context = vm.createContext({
 
 const source = fs.readFileSync(path.join(__dirname, '..', 'popup.js'), 'utf8') +
   '\nglobalThis.__t = { createIcon, icons: ICON_PATHS };';
+vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'js', 'storage.js'), 'utf8'), context);
 vm.runInContext(source, context);
 
 const { createIcon, icons } = context.__t;
@@ -50,7 +51,7 @@ assert.strictEqual(svg.children[0].tagName, 'PATH', 'child is a path');
 assert.strictEqual(svg.children[0].getAttribute('fill'), 'currentColor', 'path follows currentColor');
 assert.strictEqual(svg.children[0].getAttribute('d'), icons.play, 'path data matches the source');
 
-for (const name of ['play', 'edit', 'trash', 'arrowUp', 'arrowDown', 'close']) {
+for (const name of ['play', 'edit', 'trash', 'close', 'plus', 'drag']) {
   assert.strictEqual(createIcon(name).children[0].getAttribute('d'), icons[name], `${name} icon path matches`);
 }
 

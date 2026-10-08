@@ -21,10 +21,10 @@
       --text-muted: #64748b;
       --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06);
       --shadow-md: 0 8px 24px rgba(15, 23, 42, 0.12);
-      --radius: 12px;
-      --radius-sm: 8px;
+      --radius: 10px;
+      --radius-sm: 7px;
       --radius-pill: 999px;
-      --transition: 150ms ease;
+      --transition: 140ms ease;
     }
 
     @media (prefers-color-scheme: dark) {
@@ -55,8 +55,8 @@
       width: 500px;
       overflow-x: hidden;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-      font-size: 14px;
-      line-height: 1.45;
+      font-size: 13px;
+      line-height: 1.4;
       color: var(--text);
       background: var(--bg);
       -webkit-font-smoothing: antialiased;
@@ -69,7 +69,7 @@
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      gap: 6px;
+      gap: 5px;
       border: 1px solid transparent;
       border-radius: var(--radius-sm);
       transition: background var(--transition), color var(--transition), border-color var(--transition), box-shadow var(--transition), transform var(--transition);
@@ -90,19 +90,19 @@
     ::-webkit-scrollbar-thumb { background: var(--border-strong); border: 3px solid var(--bg); border-radius: var(--radius-pill); }
     ::-webkit-scrollbar-track { background: transparent; }
 
-    .app { padding: 16px; }
+    .app { padding: 12px; }
 
-    .app-header { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
-    .app-logo { width: 32px; height: 32px; border-radius: var(--radius-sm); background: var(--surface); box-shadow: var(--shadow-sm); }
+    .app-header { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+    .app-logo { width: 26px; height: 26px; border-radius: 6px; background: var(--surface); box-shadow: var(--shadow-sm); }
     .app-titles { display: flex; flex-direction: column; }
-    .app h1 { margin: 0; font-size: 20px; font-weight: 700; letter-spacing: -0.01em; }
-    .app-subtitle { margin: 0; font-size: 12px; color: var(--text-muted); }
+    .app h1 { margin: 0; font-size: 17px; font-weight: 700; letter-spacing: -0.01em; }
+    .app-subtitle { margin: 0; font-size: 11px; color: var(--text-muted); }
 
     .status-message {
       display: none;
       overflow-wrap: anywhere;
-      padding: 9px 12px;
-      margin-bottom: 12px;
+      padding: 7px 10px;
+      margin-bottom: 10px;
       border-radius: var(--radius-sm);
       border-left: 3px solid transparent;
       font-size: 12px;
@@ -121,19 +121,19 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 12px;
-      padding: 14px;
+      gap: 10px;
+      padding: 10px 12px;
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: var(--radius);
       box-shadow: var(--shadow-sm);
     }
-    .record-info { display: flex; align-items: center; gap: 10px; min-width: 0; }
+    .record-info { display: flex; align-items: center; gap: 8px; min-width: 0; }
     .record-title { font-weight: 600; }
-    .record-hint { font-size: 12px; color: var(--text-muted); }
+    .record-hint { font-size: 11px; color: var(--text-muted); }
 
-    .indicator { width: 10px; height: 10px; border-radius: 50%; background: var(--border-strong); flex-shrink: 0; transition: background var(--transition), box-shadow var(--transition); }
-    .indicator.recording { background: var(--danger); box-shadow: 0 0 0 0 color-mix(in srgb, var(--danger) 60%, transparent); animation: pulse 1.4s infinite; }
+    .indicator { width: 9px; height: 9px; border-radius: 50%; background: var(--border-strong); flex-shrink: 0; transition: background var(--transition), box-shadow var(--transition); }
+    .indicator.recording { background: var(--danger); animation: pulse 1.4s infinite; }
 
     @keyframes pulse {
       0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--danger) 55%, transparent); }
@@ -142,24 +142,34 @@
     }
 
     .btn-record {
-      padding: 8px 18px;
+      padding: 6px 16px;
       background: var(--accent);
       color: var(--accent-contrast);
       border-radius: var(--radius-pill);
       font-weight: 600;
-      box-shadow: var(--shadow-sm);
     }
     .btn-record:not(:disabled):hover { background: var(--accent-hover); }
     body:has(.indicator.recording) .btn-record { background: var(--danger); }
     body:has(.indicator.recording) .btn-record:not(:disabled):hover { background: var(--danger-hover); }
 
-    .tasks-section { margin-top: 20px; }
-    .section-title { margin: 0 0 10px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); }
+    .section-title { margin: 0; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); }
+
+    .last-used-section,
+    .tasks-section { margin-top: 14px; }
+    .last-used-section[hidden] { display: none; }
+
+    .tasks-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+
+    .segmented { display: inline-flex; padding: 2px; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-pill); }
+    .segmented-btn { padding: 3px 9px; background: transparent; color: var(--text-muted); border: none; border-radius: var(--radius-pill); font-size: 11px; font-weight: 600; }
+    .segmented-btn:not(.active):not(:disabled):hover { color: var(--text); }
+    .segmented-btn.active { background: var(--surface); color: var(--accent); box-shadow: var(--shadow-sm); }
+
+    #task-list { display: flex; flex-direction: column; gap: 8px; max-height: 340px; overflow-y: auto; margin: 0 -2px; padding: 0 2px 2px; }
 
     .task-card {
       overflow-wrap: anywhere;
-      padding: 12px;
-      margin-bottom: 10px;
+      padding: 9px 10px;
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: var(--radius);
@@ -167,48 +177,41 @@
       transition: box-shadow var(--transition), border-color var(--transition);
     }
     .task-card:hover { box-shadow: var(--shadow-md); border-color: var(--border-strong); }
-    .task-card > strong { display: block; font-size: 14px; font-weight: 600; }
-    .task-description { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
-    .task-meta { font-size: 11px; color: var(--text-muted); margin-top: 6px; }
+    .task-card.is-recent { border-color: var(--accent); background: linear-gradient(0deg, var(--accent-soft), var(--surface)); }
 
-    .task-actions { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 6px; }
-    .task-actions button { padding: 6px 10px; font-size: 12px; font-weight: 600; border-radius: var(--radius-sm); }
-    .task-actions .btn-run { flex: 1; background: var(--accent); color: var(--accent-contrast); }
-    .task-actions .btn-run:hover { background: var(--accent-hover); }
-    .task-actions .btn-edit { flex: 0 0 110px; background: var(--surface-2); color: var(--text); border-color: var(--border); }
-    .task-actions .btn-edit:hover { background: var(--border); }
-    .task-actions .btn-delete { flex: 0 0 96px; background: var(--danger); color: #ffffff; }
-    .task-actions .btn-delete:hover { background: var(--danger-hover); }
+    .task-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .task-head > strong { min-width: 0; flex: 1; font-size: 13px; font-weight: 600; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+    .task-description { font-size: 11px; color: var(--text-muted); margin-top: 2px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+    .task-meta { font-size: 10px; color: var(--text-muted); margin-top: 2px; }
+
+    .task-actions { display: flex; flex-wrap: wrap; gap: 4px; flex-shrink: 0; }
+    .btn-icon { width: 26px; height: 26px; padding: 0; background: var(--surface-2); color: var(--text); border-color: var(--border); }
+    .btn-icon:not(:disabled):hover { background: var(--border); }
+    .task-actions .btn-run { background: var(--accent); color: var(--accent-contrast); border-color: transparent; }
+    .task-actions .btn-run:not(:disabled):hover { background: var(--accent-hover); }
+    .task-actions .btn-delete { color: var(--danger); }
+    .task-actions .btn-delete:not(:disabled):hover { background: color-mix(in srgb, var(--danger) 14%, transparent); }
 
     .empty-list {
       margin: 0;
-      padding: 28px 16px;
+      padding: 20px 12px;
       color: var(--text-muted);
       text-align: center;
       background: var(--surface);
       border: 1px dashed var(--border-strong);
       border-radius: var(--radius);
-      font-size: 13px;
+      font-size: 12px;
     }
 
-    .edit-form {
-      display: none;
-      margin-top: 16px;
-      padding: 16px;
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      box-shadow: var(--shadow-sm);
-    }
-    .edit-form.visible { display: block; animation: status-in var(--transition); }
-    .form-title { margin: 0 0 14px; font-size: 14px; font-weight: 700; }
+    .edit-form { animation: status-in var(--transition); }
+    .form-title { margin: 0 0 10px; font-size: 13px; font-weight: 700; }
 
-    .field { display: block; margin-bottom: 12px; }
-    .field-label { display: block; margin-bottom: 4px; font-size: 12px; font-weight: 600; color: var(--text-muted); }
+    .field { display: block; margin-bottom: 8px; }
+    .field-label { display: block; margin-bottom: 3px; font-size: 11px; font-weight: 600; color: var(--text-muted); }
     .field-input {
       display: block;
       width: 100%;
-      padding: 8px 10px;
+      padding: 6px 8px;
       color: var(--text);
       background: var(--bg);
       border: 1px solid var(--border-strong);
@@ -218,57 +221,61 @@
     }
     .field-input:hover { border-color: var(--accent); }
 
-    .steps-header { margin-top: 20px; }
-    .steps-title { display: block; margin-bottom: 8px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); }
-    .steps-list { display: flex; flex-direction: column; gap: 8px; }
+    .steps-header { margin-top: 12px; }
+    .steps-title { display: block; margin-bottom: 6px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); }
+    .steps-list { display: flex; flex-direction: column; gap: 5px; }
 
-    .step-add-row { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 6px; }
+    .step-add-row { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 5px; }
     .step-type-select {
       flex: 1;
       min-width: 0;
-      padding: 8px 10px;
+      padding: 6px 8px;
       color: var(--text);
       background: var(--bg);
       border: 1px solid var(--border-strong);
       border-radius: var(--radius-sm);
     }
-    .btn-add-step { padding: 8px 12px; background: var(--accent-soft); color: var(--accent); border-color: transparent; font-weight: 600; }
+    .btn-add-step { padding: 6px 10px; background: var(--accent-soft); color: var(--accent); border-color: transparent; font-weight: 600; }
     .btn-add-step:hover { background: var(--accent); color: var(--accent-contrast); }
 
     .step-row {
-      padding: 8px;
+      padding: 5px 6px;
       background: var(--bg);
       border: 1px solid var(--border);
       border-radius: var(--radius-sm);
       display: flex;
       flex-wrap: wrap;
-      gap: 6px;
+      gap: 5px;
       align-items: center;
     }
-    .step-number { font-size: 12px; min-width: 18px; color: var(--text-muted); font-weight: 600; text-align: right; }
-    .step-label { font-size: 12px; color: var(--text-muted); white-space: nowrap; }
+    .step-row.dragging { opacity: 0.5; }
+    .step-row.drag-over { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+    .drag-handle { display: inline-flex; color: var(--text-muted); cursor: grab; }
+    .drag-handle:active { cursor: grabbing; }
+    .step-number { font-size: 11px; min-width: 15px; color: var(--text-muted); font-weight: 600; text-align: right; }
+    .step-label { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
     .step-input,
     .step-timeout {
       box-sizing: border-box;
       min-width: 0;
-      padding: 6px 8px;
+      padding: 4px 6px;
       color: var(--text);
       background: var(--surface);
       border: 1px solid var(--border-strong);
-      border-radius: 6px;
-      font-size: 12px;
+      border-radius: 5px;
+      font-size: 11px;
     }
     .step-input { flex: 1; }
-    .step-timeout { width: 70px; }
+    .step-timeout { width: 62px; }
 
-    .icon-btn { padding: 6px; background: var(--surface); color: var(--text-muted); border-color: var(--border); }
+    .icon-btn { padding: 4px; background: var(--surface); color: var(--text-muted); border-color: var(--border); }
     .icon-btn:not(:disabled):hover { color: var(--text); border-color: var(--border-strong); }
     .icon-btn:disabled { opacity: 0.35; }
 
-    .button-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
-    .btn-primary { flex: 1; padding: 10px; background: var(--accent); color: var(--accent-contrast); font-weight: 600; border-radius: var(--radius-sm); }
+    .button-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+    .btn-primary { flex: 1; padding: 8px; background: var(--accent); color: var(--accent-contrast); font-weight: 600; border-radius: var(--radius-sm); }
     .btn-primary:hover { background: var(--accent-hover); }
-    .btn-secondary { padding: 10px 14px; background: var(--surface-2); color: var(--text); border-color: var(--border); font-weight: 600; }
+    .btn-secondary { padding: 8px 12px; background: var(--surface-2); color: var(--text); border-color: var(--border); font-weight: 600; }
     .btn-secondary:hover { background: var(--border); }
   </style>
 </head>
@@ -295,50 +302,21 @@
       <button id="record-btn" type="button" class="btn-record">Record</button>
     </section>
 
-    <section class="tasks-section">
-      <h3 class="section-title">Tasks</h3>
-      <div id="task-list"></div>
+    <section id="last-used-section" class="last-used-section" hidden>
+      <h3 class="section-title">Last used</h3>
+      <div id="last-used-task"></div>
     </section>
 
-    <form id="create-task-form" class="edit-form">
-      <h3 class="form-title">Edit task</h3>
-      <label class="field">
-        <span class="field-label">Name:</span>
-        <input type="text" id="task-name" class="field-input" placeholder="Enter task name" required>
-      </label>
-      <label class="field">
-        <span class="field-label">Description:</span>
-        <textarea id="task-desc" class="field-input" rows="2"></textarea>
-      </label>
-      <label class="field">
-        <span class="field-label">Default timeout (ms):</span>
-        <input type="number" id="task-timeout" class="field-input" min="0">
-      </label>
-
-      <div class="steps-header">
-        <span class="steps-title">Steps:</span>
-        <div id="editStepsList" class="steps-list"></div>
+    <section class="tasks-section">
+      <div class="tasks-header">
+        <h3 class="section-title">Tasks</h3>
+        <div id="domain-filter" class="segmented" role="group" aria-label="Task filter">
+          <button type="button" class="segmented-btn" data-filter="domain" aria-pressed="true">This domain</button>
+          <button type="button" class="segmented-btn" data-filter="all" aria-pressed="false">All</button>
+        </div>
       </div>
-
-      <div class="step-add-row">
-        <select id="step-type-select" class="step-type-select">
-          <option value="click">Click</option>
-          <option value="input_text">Input text</option>
-          <option value="wait_element">Wait + click</option>
-          <option value="wait_timeout">Pause</option>
-          <option value="wait_page_load">Wait for load</option>
-        </select>
-        <button type="button" id="add-step-btn" class="btn-add-step">
-          <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false"><path fill="currentColor" d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
-          <span>Add step</span>
-        </button>
-      </div>
-
-      <div class="button-row">
-        <button type="submit" class="btn-primary">Save</button>
-        <button type="button" id="cancel-create-btn" class="btn-secondary">Cancel</button>
-      </div>
-    </form>
+      <div id="task-list"></div>
+    </section>
   </div>
 
   <script src="js/storage.js"></script>
