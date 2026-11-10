@@ -11,4 +11,15 @@ assert.ok(Array.isArray(manifest.permissions), 'permissions declared');
 assert.ok(manifest.permissions.includes('activeTab'), 'activeTab kept as fallback');
 assert.ok(manifest.permissions.includes('scripting'), 'scripting permission present');
 
+assert.ok(Array.isArray(manifest.background.scripts), 'background scripts declared');
+assert.ok(manifest.background.scripts.includes('js/executor.js'), 'executor available to background');
+assert.ok(
+  manifest.background.scripts.indexOf('js/storage.js') < manifest.background.scripts.indexOf('js/executor.js'),
+  'storage loads before executor'
+);
+assert.ok(
+  manifest.background.scripts.indexOf('js/executor.js') < manifest.background.scripts.indexOf('js/background.js'),
+  'executor loads before background'
+);
+
 console.log('manifest tests passed');

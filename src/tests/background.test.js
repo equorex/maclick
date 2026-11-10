@@ -21,11 +21,15 @@ let listener;
 let removedListener;
 const sentToTabs = [];
 const actionCalls = [];
+const executions = [];
+let executionError = null;
 const tabsById = {
   1: { id: 1, url: 'https://example.com/page' },
   3: { id: 3, url: 'https://esc.example/' },
   5: { id: 5, url: 'https://race.example/' },
-  7: { id: 7, url: 'about:preferences' }
+  7: { id: 7, url: 'about:preferences' },
+  8: { id: 8, url: 'https://launcher.example/page' },
+  9: { id: 9, url: 'https://empty.example/' }
 };
 
 const browser = {
@@ -66,6 +70,12 @@ const browser = {
     },
     onRemoved: { addListener(fn) { removedListener = fn; } }
   },
+  scripting: {
+    async executeScript(details) {
+      executions.push(details);
+      if (executionError) throw new Error(executionError);
+    }
+  },
   runtime: {
     onMessage: { addListener(fn) { listener = fn; } }
   }
@@ -77,6 +87,9 @@ const context = vm.createContext({ browser, console, crypto: webcrypto, URL, Dat
 vm.runInContext(fs.readFileSync(path.join(jsDir, 'storage.js'), 'utf8'), context);
 assert.strictEqual(context.TASK_DEFAULT_TIMEOUT, 300, 'storage.js publishes TASK_DEFAULT_TIMEOUT');
 assert.ok(context.taskStorage, 'storage.js publishes taskStorage');
+
+vm.runInContext(fs.readFileSync(path.join(jsDir, 'executor.js'), 'utf8'), context);
+assert.strictEqual(typeof context.executeTask, 'function', 'executor.js publishes executeTask for background');
 
 vm.runInContext(fs.readFileSync(path.join(jsDir, 'background.js'), 'utf8'), context);
 
@@ -162,6 +175,63 @@ vm.runInContext(fs.readFileSync(path.join(jsDir, 'background.js'), 'utf8'), cont
 
   const startError = await listener({ type: 'START_RECORDING' }, popup);
   assert.strictEqual(startError.status, 'error');
+
+  localStore.maclick_tasks = [
+    ...localStore.maclick_tasks,
+    { id: 'old', name: 'Older', host: 'launcher.example', lastUsedAt: 10, steps: [] },
+    { id: 'new', name: 'Newest', host: 'launcher.example', lastUsedAt: 20, steps: [] },
+    { id: 'other', name: 'Other host', host: 'other.example', lastUsedAt: 30, steps: [] },
+    { id: 'string-date', name: 'String date', host: 'launcher.example', lastUsedAt: '999', steps: [] }
+  ];
+
+  res = await listener({ type: 'GET_LAUNCHER_STATE' }, contentSender(8));
+  eq(res, { task: { id: 'new', name: 'Newest', lastUsedAt: 20 } }, 'last used task selected for host');
+
+  res = await listener({ type: 'GET_LAUNCHER_STATE' }, contentSender(1));
+  eq(res, { task: null }, 'never used tasks are not offered');
+
+  res = await listener({ type: 'GET_LAUNCHER_STATE' }, contentSender(9));
+  eq(res, { task: null }, 'no launcher task for an empty host');
+
+  res = await listener({ type: 'GET_LAUNCHER_STATE' }, contentSender(7));
+  eq(res, { task: null }, 'technical domain has no launcher task');
+
+  res = await listener({ type: 'GET_LAUNCHER_STATE' }, popup);
+  eq(res, { task: null }, 'no launcher task without a tab');
+
+  executions.length = 0;
+  res = await listener({ type: 'RUN_LAST_TASK', taskId: 'old' }, contentSender(8));
+  eq(res, { status: 'stale', task: { id: 'new', name: 'Newest', lastUsedAt: 20 } }, 'stale task rejected');
+  assert.strictEqual(executions.length, 0, 'stale task is not executed');
+
+  res = await listener({ type: 'RUN_LAST_TASK' }, contentSender(8));
+  assert.strictEqual(res.status, 'stale', 'missing task id treated as stale');
+  assert.strictEqual(executions.length, 0, 'missing task id is not executed');
+
+  res = await listener({ type: 'RUN_LAST_TASK', taskId: 'new' }, contentSender(8));
+  assert.strictEqual(res.status, 'started', 'last task started from launcher');
+  assert.strictEqual(res.task.id, 'new', 'started task reported');
+  assert.strictEqual(executions.length, 1, 'task executed once');
+  assert.strictEqual(executions[0].target.tabId, 8, 'executed in the requesting tab');
+  assert.strictEqual(executions[0].args[0].id, 'new', 'last task passed to executor');
+  assert.strictEqual(typeof executions[0].func, 'function', 'executor function injected');
+  assert.ok(localStore.maclick_tasks.find(task => task.id === 'new').lastUsedAt > 20, 'lastUsedAt updated on run');
+
+  executions.length = 0;
+  res = await listener({ type: 'RUN_LAST_TASK', taskId: 'new' }, contentSender(9));
+  eq(res, { status: 'error', error: 'no_task' }, 'no task for host');
+  assert.strictEqual(executions.length, 0, 'nothing executed without a task');
+
+  res = await listener({ type: 'RUN_LAST_TASK', taskId: 'new' }, contentSender(7));
+  eq(res, { status: 'error', error: 'no_host' }, 'technical domain cannot run a task');
+
+  res = await listener({ type: 'RUN_LAST_TASK', taskId: 'new' }, popup);
+  eq(res, { status: 'error', error: 'Unknown tab' }, 'run requires a tab');
+
+  executionError = 'boom';
+  res = await listener({ type: 'RUN_LAST_TASK', taskId: 'new' }, contentSender(8));
+  eq(res, { status: 'error', error: 'boom' }, 'execution error reported');
+  executionError = null;
 
   console.log('background tests passed');
 })().catch(e => {

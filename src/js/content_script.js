@@ -1,16 +1,28 @@
-const OVERLAY_ID = 'maclick-recording-overlay';
+const PANEL_ID = 'maclick-floating-panel';
+const DISMISSED_AT_KEY = 'maclick-launcher-dismissed-at';
 const TEXT_INPUT_TYPES = ['text', 'search', 'email', 'url', 'tel', 'number'];
-const OVERLAY_CSS = `
+const SVG_NS = 'http://www.w3.org/2000/svg';
+const ICON_PATHS = {
+  play: 'M8 5v14l11-7z',
+  close: 'M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z'
+};
+const PANEL_CSS = `
   .panel {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 8px 12px;
+    padding: 3px;
     background: #1a202c;
     color: #ffffff;
     border-radius: 999px;
     font: 12px/1.4 -apple-system, "Segoe UI", Roboto, sans-serif;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  }
+  .panel [hidden] { display: none !important; }
+  .recording {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 9px;
   }
   .dot {
     width: 10px;
@@ -34,10 +46,43 @@ const OVERLAY_CSS = `
     cursor: pointer;
   }
   .stop:hover { background: #c53030; }
+  .actions {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+  }
+  .icon-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background: transparent;
+    color: #ffffff;
+    cursor: pointer;
+    transition: background 140ms ease, color 140ms ease;
+  }
+  .icon-button:hover { background: rgba(255, 255, 255, 0.16); }
+  .icon-button:focus-visible { outline: 2px solid #ffffff; outline-offset: 1px; }
+  .icon-button:disabled { opacity: 0.5; cursor: default; }
+  .icon-button.play { color: #86efac; }
+  .icon-button.play:not(:disabled):hover { background: #16a34a; color: #ffffff; }
+  .icon-button.close:not(:disabled):hover { background: #e53e3e; color: #ffffff; }
+  svg { display: block; }
 `;
 
 let isRecording = false;
-let overlayHost = null;
+let panelHost = null;
+let recordingSection = null;
+let actionsSection = null;
+let playButton = null;
+let closeButton = null;
+let launcherTask = null;
+let launcherRequestId = 0;
+let isRunningTask = false;
 let pendingClickSelector = null;
 
 const POINTER_DOWN_EVENT = typeof PointerEvent === 'undefined' ? 'mousedown' : 'pointerdown';
@@ -116,28 +161,35 @@ function sendMessage(message) {
   });
 }
 
-function stopRecordingFromPage() {
-  if (!isRecording) return;
+function createIcon(name) {
+  const svg = document.createElementNS(SVG_NS, 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('width', '16');
+  svg.setAttribute('height', '16');
+  svg.setAttribute('aria-hidden', 'true');
+  svg.setAttribute('focusable', 'false');
 
-  isRecording = false;
-  hideOverlay();
-  sendMessage({ type: 'RECORDING_STOPPED' });
+  const path = document.createElementNS(SVG_NS, 'path');
+  path.setAttribute('fill', 'currentColor');
+  path.setAttribute('d', ICON_PATHS[name]);
+  svg.appendChild(path);
+  return svg;
 }
 
-function showOverlay() {
-  if (overlayHost && document.documentElement.contains(overlayHost)) return;
+function createIconButton(iconName, title, onClick) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'icon-button';
+  button.title = title;
+  button.setAttribute('aria-label', title);
+  button.appendChild(createIcon(iconName));
+  button.addEventListener('click', onClick);
+  return button;
+}
 
-  overlayHost = document.createElement('div');
-  overlayHost.id = OVERLAY_ID;
-  overlayHost.style.cssText = 'position:fixed;bottom:12px;right:12px;z-index:2147483647;';
-
-  const shadow = overlayHost.attachShadow({ mode: 'closed' });
-
-  const style = document.createElement('style');
-  style.textContent = OVERLAY_CSS;
-
-  const panel = document.createElement('div');
-  panel.className = 'panel';
+function createRecordingSection() {
+  const section = document.createElement('div');
+  section.className = 'recording';
 
   const dot = document.createElement('span');
   dot.className = 'dot';
@@ -155,31 +207,181 @@ function showOverlay() {
   stopButton.textContent = '⏹ Stop';
   stopButton.addEventListener('click', stopRecordingFromPage);
 
-  panel.appendChild(dot);
-  panel.appendChild(text);
-  panel.appendChild(hint);
-  panel.appendChild(stopButton);
+  section.appendChild(dot);
+  section.appendChild(text);
+  section.appendChild(hint);
+  section.appendChild(stopButton);
+  return section;
+}
+
+function createActionsSection() {
+  const section = document.createElement('div');
+  section.className = 'actions';
+  section.hidden = true;
+
+  playButton = createIconButton('play', 'Run last task', runLastTask);
+  playButton.classList.add('play');
+
+  closeButton = createIconButton('close', 'Hide panel', dismissPanel);
+  closeButton.classList.add('close');
+
+  section.appendChild(playButton);
+  section.appendChild(closeButton);
+  return section;
+}
+
+function ensurePanel() {
+  if (panelHost) return true;
+  if (!document.documentElement) return false;
+
+  panelHost = document.createElement('div');
+  panelHost.id = PANEL_ID;
+  panelHost.style.cssText = 'position:fixed;bottom:12px;right:12px;z-index:2147483647;pointer-events:auto;';
+
+  const shadow = panelHost.attachShadow({ mode: 'closed' });
+  const style = document.createElement('style');
+  style.textContent = PANEL_CSS;
+
+  const panel = document.createElement('div');
+  panel.className = 'panel';
+
+  recordingSection = createRecordingSection();
+  actionsSection = createActionsSection();
+  panel.appendChild(recordingSection);
+  panel.appendChild(actionsSection);
+
   shadow.appendChild(style);
   shadow.appendChild(panel);
-
-  document.documentElement.appendChild(overlayHost);
+  document.documentElement.appendChild(panelHost);
+  return true;
 }
 
-function hideOverlay() {
-  if (!overlayHost) return;
+function hidePanel() {
+  if (!panelHost) return;
 
-  if (overlayHost.parentNode) overlayHost.parentNode.removeChild(overlayHost);
-  overlayHost = null;
+  const host = panelHost;
+  panelHost = null;
+  recordingSection = null;
+  actionsSection = null;
+  playButton = null;
+  closeButton = null;
+
+  if (host.parentNode) host.parentNode.removeChild(host);
 }
 
-function isOverlayEvent(e) {
-  if (!overlayHost) return false;
-  if (e.target === overlayHost) return true;
-  return typeof e.composedPath === 'function' && e.composedPath().includes(overlayHost);
+function readDismissedAt() {
+  try {
+    const value = parseInt(sessionStorage.getItem(DISMISSED_AT_KEY), 10);
+    return Number.isFinite(value) && value > 0 ? value : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function isLauncherDismissed(task) {
+  if (!task || !Number.isFinite(task.lastUsedAt)) return true;
+
+  const dismissedAt = readDismissedAt();
+  return dismissedAt !== null && task.lastUsedAt <= dismissedAt;
+}
+
+function renderPanel() {
+  const showRecording = isRecording;
+  const showActions = !isRecording && !!launcherTask && !isLauncherDismissed(launcherTask);
+
+  if (!showRecording && !showActions) {
+    hidePanel();
+    return;
+  }
+
+  if (!ensurePanel()) return;
+
+  recordingSection.hidden = !showRecording;
+  actionsSection.hidden = !showActions;
+
+  if (showActions) {
+    const taskName = launcherTask.name || '';
+    const label = taskName ? `Run last task: ${taskName}` : 'Run last task';
+    playButton.title = label;
+    playButton.setAttribute('aria-label', label);
+    playButton.disabled = isRunningTask;
+    closeButton.title = 'Hide panel';
+    closeButton.setAttribute('aria-label', 'Hide panel');
+    closeButton.disabled = false;
+  }
+}
+
+async function refreshLauncherState() {
+  const requestId = ++launcherRequestId;
+  let state = null;
+
+  try {
+    state = await browser.runtime.sendMessage({ type: 'GET_LAUNCHER_STATE' });
+  } catch (e) {
+    console.warn('Failed to read launcher state:', e);
+    return;
+  }
+
+  if (requestId !== launcherRequestId) return;
+
+  const task = state && state.task;
+  launcherTask = task && typeof task.id === 'string' && task.id.length > 0 && Number.isFinite(task.lastUsedAt)
+    ? {
+        id: task.id,
+        name: typeof task.name === 'string' ? task.name : '',
+        lastUsedAt: task.lastUsedAt
+      }
+    : null;
+
+  renderPanel();
+}
+
+async function runLastTask() {
+  if (!launcherTask || isRunningTask) return;
+
+  const taskId = launcherTask.id;
+  isRunningTask = true;
+  renderPanel();
+
+  try {
+    const result = await browser.runtime.sendMessage({ type: 'RUN_LAST_TASK', taskId });
+    if (!result || result.status !== 'started') {
+      console.warn('Failed to run last task:', result && result.error ? result.error : result);
+    }
+  } catch (e) {
+    console.error('Failed to run last task:', e);
+  } finally {
+    isRunningTask = false;
+    await refreshLauncherState();
+  }
+}
+
+function dismissPanel() {
+  try {
+    sessionStorage.setItem(DISMISSED_AT_KEY, String(Date.now()));
+  } catch (e) {
+    console.warn('Failed to remember dismissed panel:', e);
+  }
+
+  hidePanel();
+}
+
+function stopRecordingFromPage() {
+  if (!isRecording) return;
+
+  isRecording = false;
+  renderPanel();
+  sendMessage({ type: 'RECORDING_STOPPED' });
+}
+
+function isPanelEvent(e) {
+  if (!panelHost) return false;
+  if (e.target === panelHost) return true;
+  return typeof e.composedPath === 'function' && e.composedPath().includes(panelHost);
 }
 
 document.addEventListener(POINTER_DOWN_EVENT, function(e) {
-  if (!isRecording || isOverlayEvent(e)) return;
+  if (!isRecording || isPanelEvent(e)) return;
 
   pendingClickSelector = getSelector(e.target);
 }, true);
@@ -189,7 +391,7 @@ document.addEventListener('pointercancel', function() {
 }, true);
 
 document.addEventListener('click', function(e) {
-  if (!isRecording || isOverlayEvent(e)) return;
+  if (!isRecording || isPanelEvent(e)) return;
 
   const selector = pendingClickSelector || getSelector(e.target);
   pendingClickSelector = null;
@@ -201,7 +403,7 @@ document.addEventListener('click', function(e) {
 }, true);
 
 document.addEventListener('change', function(e) {
-  if (!isRecording || isOverlayEvent(e)) return;
+  if (!isRecording || isPanelEvent(e)) return;
 
   const target = e.target;
   if (!isTextInput(target)) return;
@@ -222,13 +424,13 @@ document.addEventListener('keydown', function(e) {
 browser.runtime.onMessage.addListener(async function(message) {
   if (message.type === 'START_RECORDING') {
     isRecording = true;
-    showOverlay();
+    renderPanel();
     return { status: 'started' };
   }
 
   if (message.type === 'STOP_RECORDING') {
     isRecording = false;
-    hideOverlay();
+    renderPanel();
     return { status: 'stopped' };
   }
 
@@ -240,11 +442,30 @@ async function restoreRecordingState() {
     const state = await browser.runtime.sendMessage({ type: 'GET_RECORDING_STATE' });
     if (state && state.recording) {
       isRecording = true;
-      showOverlay();
+      renderPanel();
     }
   } catch (e) {
     console.warn('Failed to restore recording state:', e);
   }
 }
 
-restoreRecordingState();
+function watchTaskStorage() {
+  if (!browser.storage || !browser.storage.onChanged) return;
+
+  browser.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName !== 'local' || !changes || !changes.maclick_tasks) return;
+    refreshLauncherState();
+  });
+}
+
+function initPageState() {
+  watchTaskStorage();
+  restoreRecordingState();
+  refreshLauncherState();
+}
+
+initPageState();
+
+if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
+  document.addEventListener('DOMContentLoaded', renderPanel, { once: true });
+}

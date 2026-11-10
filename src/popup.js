@@ -645,15 +645,6 @@ function createField(labelText, control) {
   return field;
 }
 
-function pickLastUsed(tasks) {
-  let best = null;
-  for (const task of tasks) {
-    if (!Number.isFinite(task.lastUsedAt)) continue;
-    if (!best || task.lastUsedAt > best.lastUsedAt) best = task;
-  }
-  return best;
-}
-
 function filterTasks(tasks, filter, host) {
   if (filter === 'domain' && host) {
     return tasks.filter(task => task.host === host);
@@ -827,13 +818,13 @@ async function runTask(taskId) {
   try {
     const { task: runnable, copied } = await ensureTaskForCurrentHost(task, tasks);
 
+    if (!copied) await taskStorage.update(runnable.id, { lastUsedAt: Date.now() });
+
     await browser.scripting.executeScript({
       target: { tabId: tab.id },
       func: executeTask,
       args: [runnable]
     });
-
-    if (!copied) await taskStorage.update(runnable.id, { lastUsedAt: Date.now() });
 
     if (isForeign) {
       domainFilter = 'domain';

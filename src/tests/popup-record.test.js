@@ -101,7 +101,10 @@ function createHarness(options = {}) {
       }
     },
     scripting: {
-      async executeScript() { state.executed = true; }
+      async executeScript() {
+        state.executed = true;
+        state.executedTasks = state.tasks.map(task => ({ ...task }));
+      }
     },
     storage: {
       local: {
@@ -374,6 +377,7 @@ function createHarness(options = {}) {
 
   assert.strictEqual(running.state.executed, true, 'task executed');
   assert.ok(Number.isFinite(running.state.tasks[0].lastUsedAt), 'lastUsedAt recorded on run');
+  assert.ok(Number.isFinite(running.state.executedTasks[0].lastUsedAt), 'lastUsedAt recorded before execution');
   assert.strictEqual(running.elements['last-used-section'].hidden, false, 'last used section appears after run');
   assert.strictEqual(running.elements['last-used-task'].children.length, 1, 'last used card rendered');
 

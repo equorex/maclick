@@ -6,7 +6,8 @@
 
   async function readTasks() {
     const result = await browser.storage.local.get([STORAGE_KEY]);
-    return result[STORAGE_KEY] || [];
+    const tasks = result[STORAGE_KEY];
+    return Array.isArray(tasks) ? tasks : [];
   }
 
   async function writeTasks(tasks) {
@@ -14,6 +15,17 @@
   }
 
   globalThis.TASK_DEFAULT_TIMEOUT = 300;
+
+  globalThis.pickLastUsed = function (tasks) {
+    if (!Array.isArray(tasks)) return null;
+
+    let best = null;
+    for (const task of tasks) {
+      if (!task || !Number.isFinite(task.lastUsedAt)) continue;
+      if (!best || task.lastUsedAt > best.lastUsedAt) best = task;
+    }
+    return best;
+  };
 
   globalThis.taskStorage = {
     async getAll() {

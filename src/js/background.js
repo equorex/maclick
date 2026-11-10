@@ -138,6 +138,54 @@ async function resolveTabUrl(sender, tabId) {
   return getTabUrl(tabId);
 }
 
+async function resolveLastUsedTask(sender, tabId) {
+  const url = await resolveTabUrl(sender, tabId);
+  const host = getHostname(url);
+  if (!host) return { host: '', task: null };
+
+  const tasks = await taskStorage.getAll();
+  const scoped = tasks.filter(task => task && task.host === host);
+  return { host, task: pickLastUsed(scoped) };
+}
+
+function summarizeTask(task) {
+  if (!task) return null;
+  return { id: task.id, name: task.name, lastUsedAt: task.lastUsedAt };
+}
+
+async function handleGetLauncherState(message, sender) {
+  const tabId = resolveTabId(message, sender);
+  if (tabId === null) return { task: null };
+
+  const { task } = await resolveLastUsedTask(sender, tabId);
+  return { task: summarizeTask(task) };
+}
+
+async function handleRunLastTask(message, sender) {
+  const tabId = resolveTabId(message, sender);
+  if (tabId === null) return { status: 'error', error: 'Unknown tab' };
+
+  const { host, task } = await resolveLastUsedTask(sender, tabId);
+  if (!host) return { status: 'error', error: 'no_host' };
+  if (!task) return { status: 'error', error: 'no_task' };
+  if (message.taskId !== task.id) return { status: 'stale', task: summarizeTask(task) };
+
+  const updated = await taskStorage.update(task.id, { lastUsedAt: Date.now() });
+  if (!updated) return { status: 'error', error: 'no_task' };
+
+  try {
+    await browser.scripting.executeScript({
+      target: { tabId },
+      func: executeTask,
+      args: [updated]
+    });
+  } catch (e) {
+    return { status: 'error', error: e.message };
+  }
+
+  return { status: 'started', task: summarizeTask(updated) };
+}
+
 async function finishRecording(sender, tabId, session) {
   const url = await resolveTabUrl(sender, tabId);
   const result = await saveRecordedTask(url, session ? session.steps : []);
@@ -216,6 +264,10 @@ async function handleMessage(message, sender) {
       return enqueue(() => handleRecordingStopped(message, sender));
     case 'GET_RECORDING_STATE':
       return enqueue(() => handleGetRecordingState(message, sender));
+    case 'GET_LAUNCHER_STATE':
+      return enqueue(() => handleGetLauncherState(message, sender));
+    case 'RUN_LAST_TASK':
+      return handleRunLastTask(message, sender);
     default:
       return undefined;
   }

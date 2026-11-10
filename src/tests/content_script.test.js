@@ -65,9 +65,28 @@ function createElement(tag) {
       return {
         length: names.length,
         item: index => names[index],
-        contains: name => names.includes(name)
+        contains: name => names.includes(name),
+        add(name) {
+          if (names.includes(name)) return;
+          names.push(name);
+          el.className = names.join(' ');
+        },
+        remove(name) {
+          const index = names.indexOf(name);
+          if (index < 0) return;
+          names.splice(index, 1);
+          el.className = names.join(' ');
+        },
+        toggle(name, force) {
+          const enabled = force === undefined ? !names.includes(name) : !!force;
+          if (enabled) this.add(name);
+          else this.remove(name);
+          return enabled;
+        }
       };
     },
+    setAttribute(name, value) { el[name] = value; },
+    getAttribute(name) { return Object.prototype.hasOwnProperty.call(el, name) ? el[name] : null; },
     getRootNode() {
       let node = el;
       while (node.parentNode) node = node.parentNode;
@@ -107,7 +126,13 @@ const contentSource = fs.readFileSync(path.join(jsDir, 'content_script.js'), 'ut
 function createHarness(options = {}) {
   const docListeners = {};
   const messageListeners = [];
-  const state = { sent: [], recording: !!options.recording };
+  const storageListeners = [];
+  const sessionStore = options.sessionStore || {};
+  const state = {
+    sent: [],
+    recording: !!options.recording,
+    launcher: options.launcher || { task: null }
+  };
 
   const documentElement = createElement('html');
   const document = {
@@ -116,6 +141,7 @@ function createHarness(options = {}) {
     children: [documentElement],
     addEventListener(type, fn) { (docListeners[type] = docListeners[type] || []).push(fn); },
     createElement,
+    createElementNS(namespace, tag) { return createElement(tag); },
     querySelectorAll(selector) { return queryAll(document, selector); }
   };
   documentElement.parentNode = document;
@@ -125,15 +151,29 @@ function createHarness(options = {}) {
       async sendMessage(message) {
         state.sent.push(message);
         if (message.type === 'GET_RECORDING_STATE') return { recording: state.recording };
+        if (message.type === 'GET_LAUNCHER_STATE') return state.launcher;
+        if (message.type === 'RUN_LAST_TASK') return { status: 'started' };
         return { status: 'ok' };
       },
       onMessage: { addListener(fn) { messageListeners.push(fn); } }
+    },
+    storage: {
+      onChanged: { addListener(fn) { storageListeners.push(fn); } }
     }
+  };
+
+  const sessionStorage = {
+    getItem(key) {
+      return Object.prototype.hasOwnProperty.call(sessionStore, key) ? sessionStore[key] : null;
+    },
+    setItem(key, value) { sessionStore[key] = String(value); },
+    removeItem(key) { delete sessionStore[key]; }
   };
 
   const context = vm.createContext({
     document,
     browser,
+    sessionStorage,
     console,
     Node: { ELEMENT_NODE: 1, DOCUMENT_NODE: 9, DOCUMENT_FRAGMENT_NODE: 11 },
     CSS: { escape: value => value },
@@ -146,14 +186,21 @@ function createHarness(options = {}) {
 
   return {
     state,
+    sessionStore,
     document,
     docListeners,
     onMessage: messageListeners[0],
     overlay() {
-      return document.documentElement.children.find(el => el.id === 'maclick-recording-overlay') || null;
+      return document.documentElement.children.find(el => el.id === 'maclick-floating-panel') || null;
     },
     overlayCount() {
-      return document.documentElement.children.filter(el => el.id === 'maclick-recording-overlay').length;
+      return document.documentElement.children.filter(el => el.id === 'maclick-floating-panel').length;
+    },
+    setLauncher(task) {
+      state.launcher = { task };
+    },
+    emitTaskStorageChange() {
+      storageListeners.forEach(fn => fn({ maclick_tasks: { newValue: [] } }, 'local'));
     }
   };
 }
@@ -170,8 +217,10 @@ function createHarness(options = {}) {
   const overlayCount = harness.overlayCount();
   assert.strictEqual(overlayCount, 1, 'overlay is not duplicated on repeated start');
 
-  const stopButton = harness.overlay().shadowRoot.children[1].children[3];
+  const panelBody = harness.overlay().shadowRoot.children[1];
+  const stopButton = panelBody.children[0].children[3];
   assert.strictEqual(stopButton.textContent, '⏹ Stop', 'stop button rendered');
+  assert.strictEqual(panelBody.children[1].hidden, true, 'actions hidden while recording');
 
   harness.state.sent.length = 0;
   harness.docListeners.click[0]({
@@ -399,6 +448,89 @@ function createHarness(options = {}) {
   legacyHarness.state.sent.length = 0;
   legacyHarness.docListeners.click[0]({ target: legacyTarget, composedPath: () => [legacyTarget] });
   assert.strictEqual(legacyHarness.state.sent[0].step.selector, '#legacy', 'mousedown fallback captures selector');
+
+  const emptyLauncherHarness = createHarness();
+  await delay(10);
+  assert.strictEqual(emptyLauncherHarness.overlay(), null, 'no panel without a last used task');
+
+  const launcherHarness = createHarness({
+    launcher: { task: { id: 'last', name: 'Login', lastUsedAt: 1000 } }
+  });
+  await delay(10);
+
+  let launcherPanel = launcherHarness.overlay();
+  assert.ok(launcherPanel, 'launcher panel shown with last used task');
+  let launcherBody = launcherPanel.shadowRoot.children[1];
+  assert.strictEqual(launcherBody.children[0].hidden, true, 'recording indicator hidden on launcher');
+  assert.strictEqual(launcherBody.children[1].hidden, false, 'actions visible on launcher');
+
+  let playButton = launcherBody.children[1].children[0];
+  let closeButton = launcherBody.children[1].children[1];
+  assert.strictEqual(playButton.title, 'Run last task: Login', 'play button shows task name');
+  assert.strictEqual(playButton.getAttribute('aria-label'), 'Run last task: Login', 'play button accessible label');
+  assert.strictEqual(closeButton.getAttribute('aria-label'), 'Hide panel', 'close button accessible label');
+  assert.ok(playButton.className.includes('play'), 'play button styled');
+  assert.ok(closeButton.className.includes('close'), 'close button styled');
+  assert.strictEqual(playButton.children[0].tagName, 'SVG', 'play button uses an svg icon');
+  assert.strictEqual(closeButton.children[0].tagName, 'SVG', 'close button uses an svg icon');
+  assert.strictEqual(closeButton.children[0].children[0].getAttribute('d').startsWith('M19 6.41'), true, 'close icon path rendered');
+
+  launcherHarness.state.sent.length = 0;
+  playButton.dispatch('click');
+  await delay(10);
+
+  const runMessage = launcherHarness.state.sent.find(message => message.type === 'RUN_LAST_TASK');
+  eq(runMessage, { type: 'RUN_LAST_TASK', taskId: 'last' }, 'play button runs the displayed task');
+  assert.strictEqual(playButton.disabled, false, 'play button re-enabled after run');
+
+  closeButton.dispatch('click');
+  assert.strictEqual(launcherHarness.overlay(), null, 'close button hides the whole panel');
+  assert.ok(Number(launcherHarness.sessionStore['maclick-launcher-dismissed-at']) > 0, 'dismissal time stored');
+
+  launcherHarness.emitTaskStorageChange();
+  await delay(10);
+  assert.strictEqual(launcherHarness.overlay(), null, 'panel stays hidden without new activity');
+
+  launcherHarness.setLauncher({ id: 'last', name: 'Login', lastUsedAt: Date.now() + 5000 });
+  launcherHarness.emitTaskStorageChange();
+  await delay(10);
+  assert.ok(launcherHarness.overlay(), 'panel returns after a new task run');
+
+  launcherHarness.setLauncher(null);
+  launcherHarness.emitTaskStorageChange();
+  await delay(10);
+  assert.strictEqual(launcherHarness.overlay(), null, 'panel hides when task disappears');
+
+  const recordLaunchHarness = createHarness({
+    launcher: { task: { id: 'last', name: 'Login', lastUsedAt: Date.now() } }
+  });
+  await delay(10);
+  assert.ok(recordLaunchHarness.overlay(), 'launcher visible before recording');
+
+  await recordLaunchHarness.onMessage({ type: 'START_RECORDING' });
+  launcherPanel = recordLaunchHarness.overlay();
+  launcherBody = launcherPanel.shadowRoot.children[1];
+  assert.strictEqual(launcherBody.children[0].hidden, false, 'recording indicator shown while recording');
+  assert.strictEqual(launcherBody.children[1].hidden, true, 'actions hidden while recording');
+
+  await recordLaunchHarness.onMessage({ type: 'STOP_RECORDING' });
+  assert.strictEqual(launcherBody.children[0].hidden, true, 'recording indicator hidden after stop');
+  assert.strictEqual(launcherBody.children[1].hidden, false, 'actions restored after stop');
+
+  const sharedSession = {};
+  const firstVisit = createHarness({
+    launcher: { task: { id: 'last', name: 'Login', lastUsedAt: 1000 } },
+    sessionStore: sharedSession
+  });
+  await delay(10);
+  firstVisit.overlay().shadowRoot.children[1].children[1].children[1].dispatch('click');
+
+  const secondVisit = createHarness({
+    launcher: { task: { id: 'last', name: 'Login', lastUsedAt: 1000 } },
+    sessionStore: sharedSession
+  });
+  await delay(10);
+  assert.strictEqual(secondVisit.overlay(), null, 'dismissal survives page reload');
 
   console.log('content script tests passed');
 })().catch(e => {
