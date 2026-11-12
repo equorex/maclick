@@ -111,13 +111,15 @@ async function saveRecordedTask(url, steps) {
   const host = getHostname(url);
   if (!host) return { task: null, error: 'no_host' };
 
+  const now = Date.now();
   const task = {
     id: crypto.randomUUID(),
     name: `Task from ${formatDate(new Date())} (${host})`,
     host,
     description: '',
     defaultTimeout: TASK_DEFAULT_TIMEOUT,
-    createdAt: Date.now(),
+    createdAt: now,
+    lastActiveAt: now,
     steps: [{ type: 'wait_page_load' }, ...steps]
   };
 
@@ -138,26 +140,26 @@ async function resolveTabUrl(sender, tabId) {
   return getTabUrl(tabId);
 }
 
-async function resolveLastUsedTask(sender, tabId) {
+async function resolveLastTask(sender, tabId) {
   const url = await resolveTabUrl(sender, tabId);
   const host = getHostname(url);
   if (!host) return { host: '', task: null };
 
   const tasks = await taskStorage.getAll();
   const scoped = tasks.filter(task => task && task.host === host);
-  return { host, task: pickLastUsed(scoped) };
+  return { host, task: pickLastTask(scoped) };
 }
 
 function summarizeTask(task) {
   if (!task) return null;
-  return { id: task.id, name: task.name, lastUsedAt: task.lastUsedAt };
+  return { id: task.id, name: task.name, lastActiveAt: taskActivityAt(task) };
 }
 
 async function handleGetLauncherState(message, sender) {
   const tabId = resolveTabId(message, sender);
   if (tabId === null) return { task: null };
 
-  const { task } = await resolveLastUsedTask(sender, tabId);
+  const { task } = await resolveLastTask(sender, tabId);
   return { task: summarizeTask(task) };
 }
 
@@ -165,12 +167,12 @@ async function handleRunLastTask(message, sender) {
   const tabId = resolveTabId(message, sender);
   if (tabId === null) return { status: 'error', error: 'Unknown tab' };
 
-  const { host, task } = await resolveLastUsedTask(sender, tabId);
+  const { host, task } = await resolveLastTask(sender, tabId);
   if (!host) return { status: 'error', error: 'no_host' };
   if (!task) return { status: 'error', error: 'no_task' };
   if (message.taskId !== task.id) return { status: 'stale', task: summarizeTask(task) };
 
-  const updated = await taskStorage.update(task.id, { lastUsedAt: Date.now() });
+  const updated = await taskStorage.update(task.id, { lastActiveAt: Date.now() });
   if (!updated) return { status: 'error', error: 'no_task' };
 
   try {
@@ -244,6 +246,19 @@ async function handleGetRecordingState(message, sender) {
   return { recording };
 }
 
+async function handleReloadTab(message, sender) {
+  const tabId = resolveTabId(message, sender);
+  if (tabId === null) return { status: 'error', error: 'Unknown tab' };
+
+  try {
+    await browser.tabs.reload(tabId);
+  } catch (e) {
+    return { status: 'error', error: e.message };
+  }
+
+  return { status: 'reloaded' };
+}
+
 let operationQueue = Promise.resolve();
 
 function enqueue(operation) {
@@ -268,6 +283,8 @@ async function handleMessage(message, sender) {
       return enqueue(() => handleGetLauncherState(message, sender));
     case 'RUN_LAST_TASK':
       return handleRunLastTask(message, sender);
+    case 'RELOAD_TAB':
+      return handleReloadTab(message, sender);
     default:
       return undefined;
   }

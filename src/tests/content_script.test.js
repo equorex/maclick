@@ -451,27 +451,31 @@ function createHarness(options = {}) {
 
   const emptyLauncherHarness = createHarness();
   await delay(10);
-  assert.strictEqual(emptyLauncherHarness.overlay(), null, 'no panel without a last used task');
+  assert.strictEqual(emptyLauncherHarness.overlay(), null, 'no panel without a last task');
 
   const launcherHarness = createHarness({
-    launcher: { task: { id: 'last', name: 'Login', lastUsedAt: 1000 } }
+    launcher: { task: { id: 'last', name: 'Login', lastActiveAt: 1000 } }
   });
   await delay(10);
 
   let launcherPanel = launcherHarness.overlay();
-  assert.ok(launcherPanel, 'launcher panel shown with last used task');
+  assert.ok(launcherPanel, 'launcher panel shown with last task');
   let launcherBody = launcherPanel.shadowRoot.children[1];
   assert.strictEqual(launcherBody.children[0].hidden, true, 'recording indicator hidden on launcher');
   assert.strictEqual(launcherBody.children[1].hidden, false, 'actions visible on launcher');
 
   let playButton = launcherBody.children[1].children[0];
-  let closeButton = launcherBody.children[1].children[1];
+  let reloadButton = launcherBody.children[1].children[1];
+  let closeButton = launcherBody.children[1].children[2];
   assert.strictEqual(playButton.title, 'Run last task: Login', 'play button shows task name');
   assert.strictEqual(playButton.getAttribute('aria-label'), 'Run last task: Login', 'play button accessible label');
+  assert.strictEqual(reloadButton.getAttribute('aria-label'), 'Reload tab', 'reload button accessible label');
   assert.strictEqual(closeButton.getAttribute('aria-label'), 'Hide panel', 'close button accessible label');
   assert.ok(playButton.className.includes('play'), 'play button styled');
+  assert.ok(reloadButton.className.includes('reload'), 'reload button styled');
   assert.ok(closeButton.className.includes('close'), 'close button styled');
   assert.strictEqual(playButton.children[0].tagName, 'SVG', 'play button uses an svg icon');
+  assert.strictEqual(reloadButton.children[0].tagName, 'SVG', 'reload button uses an svg icon');
   assert.strictEqual(closeButton.children[0].tagName, 'SVG', 'close button uses an svg icon');
   assert.strictEqual(closeButton.children[0].children[0].getAttribute('d').startsWith('M19 6.41'), true, 'close icon path rendered');
 
@@ -483,6 +487,11 @@ function createHarness(options = {}) {
   eq(runMessage, { type: 'RUN_LAST_TASK', taskId: 'last' }, 'play button runs the displayed task');
   assert.strictEqual(playButton.disabled, false, 'play button re-enabled after run');
 
+  launcherHarness.state.sent.length = 0;
+  reloadButton.dispatch('click');
+  await delay(10);
+  eq(launcherHarness.state.sent[0], { type: 'RELOAD_TAB' }, 'reload button reloads the tab');
+
   closeButton.dispatch('click');
   assert.strictEqual(launcherHarness.overlay(), null, 'close button hides the whole panel');
   assert.ok(Number(launcherHarness.sessionStore['maclick-launcher-dismissed-at']) > 0, 'dismissal time stored');
@@ -491,10 +500,10 @@ function createHarness(options = {}) {
   await delay(10);
   assert.strictEqual(launcherHarness.overlay(), null, 'panel stays hidden without new activity');
 
-  launcherHarness.setLauncher({ id: 'last', name: 'Login', lastUsedAt: Date.now() + 5000 });
+  launcherHarness.setLauncher({ id: 'last', name: 'Login', lastActiveAt: Date.now() + 5000 });
   launcherHarness.emitTaskStorageChange();
   await delay(10);
-  assert.ok(launcherHarness.overlay(), 'panel returns after a new task run');
+  assert.ok(launcherHarness.overlay(), 'panel returns after new task activity');
 
   launcherHarness.setLauncher(null);
   launcherHarness.emitTaskStorageChange();
@@ -502,7 +511,7 @@ function createHarness(options = {}) {
   assert.strictEqual(launcherHarness.overlay(), null, 'panel hides when task disappears');
 
   const recordLaunchHarness = createHarness({
-    launcher: { task: { id: 'last', name: 'Login', lastUsedAt: Date.now() } }
+    launcher: { task: { id: 'last', name: 'Login', lastActiveAt: Date.now() } }
   });
   await delay(10);
   assert.ok(recordLaunchHarness.overlay(), 'launcher visible before recording');
@@ -519,14 +528,14 @@ function createHarness(options = {}) {
 
   const sharedSession = {};
   const firstVisit = createHarness({
-    launcher: { task: { id: 'last', name: 'Login', lastUsedAt: 1000 } },
+    launcher: { task: { id: 'last', name: 'Login', lastActiveAt: 1000 } },
     sessionStore: sharedSession
   });
   await delay(10);
-  firstVisit.overlay().shadowRoot.children[1].children[1].children[1].dispatch('click');
+  firstVisit.overlay().shadowRoot.children[1].children[1].children[2].dispatch('click');
 
   const secondVisit = createHarness({
-    launcher: { task: { id: 'last', name: 'Login', lastUsedAt: 1000 } },
+    launcher: { task: { id: 'last', name: 'Login', lastActiveAt: 1000 } },
     sessionStore: sharedSession
   });
   await delay(10);

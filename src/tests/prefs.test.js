@@ -36,16 +36,23 @@ const assert = require('assert');
   assert.strictEqual(store.maclick_domain_filter, 'domain', 'invalid value persisted as default');
   assert.strictEqual(await context.prefsStorage.getDomainFilter(), 'domain', 'invalid value falls back to default');
 
-  assert.strictEqual(typeof context.pickLastUsed, 'function', 'pickLastUsed exported');
-  assert.strictEqual(context.pickLastUsed([]), null, 'empty list has no last used task');
-  assert.strictEqual(context.pickLastUsed(null), null, 'non-array list has no last used task');
-  assert.strictEqual(context.pickLastUsed([{ id: 'a' }, { id: 'b', lastUsedAt: NaN }]), null, 'tasks without a valid date are ignored');
-  assert.strictEqual(context.pickLastUsed([{ id: 'a', lastUsedAt: '5' }, { id: 'b', lastUsedAt: null }]), null, 'non-numeric dates are ignored');
+  assert.strictEqual(typeof context.pickLastTask, 'function', 'pickLastTask exported');
+  assert.strictEqual(context.pickLastTask([]), null, 'empty list has no last task');
+  assert.strictEqual(context.pickLastTask(null), null, 'non-array list has no last task');
+  assert.strictEqual(context.pickLastTask([{ id: 'a' }, { id: 'b', lastActiveAt: NaN }]), null, 'tasks without a valid date are ignored');
+  assert.strictEqual(context.pickLastTask([{ id: 'a', lastActiveAt: '5' }, { id: 'b', lastActiveAt: null }]), null, 'non-numeric dates are ignored');
 
-  const older = { id: 'old', lastUsedAt: 1 };
-  const newer = { id: 'new', lastUsedAt: 2 };
-  assert.strictEqual(context.pickLastUsed([older, newer]), newer, 'newest task selected');
-  assert.strictEqual(context.pickLastUsed([newer, older]), newer, 'selection does not depend on order');
+  const older = { id: 'old', lastActiveAt: 1 };
+  const newer = { id: 'new', lastActiveAt: 2 };
+  assert.strictEqual(context.pickLastTask([older, newer]), newer, 'newest activity selected');
+  assert.strictEqual(context.pickLastTask([newer, older]), newer, 'selection does not depend on order');
+
+  const legacyUsed = { id: 'used', lastUsedAt: 5 };
+  const legacyCreated = { id: 'created', createdAt: 6 };
+  assert.strictEqual(context.pickLastTask([legacyUsed, legacyCreated]), legacyCreated, 'legacy used and created dates are compared');
+  assert.strictEqual(context.pickLastTask([{ id: 'created', createdAt: 10 }, { id: 'active', createdAt: 1, lastActiveAt: 11 }]).id, 'active', 'lastActiveAt wins');
+  assert.strictEqual(context.taskActivityAt({ createdAt: 1, lastUsedAt: 2, lastActiveAt: 3 }), 3, 'taskActivityAt picks the latest date');
+  assert.ok(Number.isNaN(context.taskActivityAt({})), 'taskActivityAt ignores missing dates');
 
   console.log('storage prefs tests passed');
 })().catch(e => {

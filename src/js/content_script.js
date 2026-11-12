@@ -4,6 +4,7 @@ const TEXT_INPUT_TYPES = ['text', 'search', 'email', 'url', 'tel', 'number'];
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const ICON_PATHS = {
   play: 'M8 5v14l11-7z',
+  reload: 'M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-8 8s3.58 8 8 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z',
   close: 'M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z'
 };
 const PANEL_CSS = `
@@ -70,6 +71,7 @@ const PANEL_CSS = `
   .icon-button:disabled { opacity: 0.5; cursor: default; }
   .icon-button.play { color: #86efac; }
   .icon-button.play:not(:disabled):hover { background: #16a34a; color: #ffffff; }
+  .icon-button.reload:not(:disabled):hover { background: #2563eb; color: #ffffff; }
   .icon-button.close:not(:disabled):hover { background: #e53e3e; color: #ffffff; }
   svg { display: block; }
 `;
@@ -79,6 +81,7 @@ let panelHost = null;
 let recordingSection = null;
 let actionsSection = null;
 let playButton = null;
+let reloadButton = null;
 let closeButton = null;
 let launcherTask = null;
 let launcherRequestId = 0;
@@ -222,10 +225,14 @@ function createActionsSection() {
   playButton = createIconButton('play', 'Run last task', runLastTask);
   playButton.classList.add('play');
 
+  reloadButton = createIconButton('reload', 'Reload tab', reloadTab);
+  reloadButton.classList.add('reload');
+
   closeButton = createIconButton('close', 'Hide panel', dismissPanel);
   closeButton.classList.add('close');
 
   section.appendChild(playButton);
+  section.appendChild(reloadButton);
   section.appendChild(closeButton);
   return section;
 }
@@ -264,6 +271,7 @@ function hidePanel() {
   recordingSection = null;
   actionsSection = null;
   playButton = null;
+  reloadButton = null;
   closeButton = null;
 
   if (host.parentNode) host.parentNode.removeChild(host);
@@ -279,10 +287,10 @@ function readDismissedAt() {
 }
 
 function isLauncherDismissed(task) {
-  if (!task || !Number.isFinite(task.lastUsedAt)) return true;
+  if (!task || !Number.isFinite(task.lastActiveAt)) return true;
 
   const dismissedAt = readDismissedAt();
-  return dismissedAt !== null && task.lastUsedAt <= dismissedAt;
+  return dismissedAt !== null && task.lastActiveAt <= dismissedAt;
 }
 
 function renderPanel() {
@@ -325,11 +333,11 @@ async function refreshLauncherState() {
   if (requestId !== launcherRequestId) return;
 
   const task = state && state.task;
-  launcherTask = task && typeof task.id === 'string' && task.id.length > 0 && Number.isFinite(task.lastUsedAt)
+  launcherTask = task && typeof task.id === 'string' && task.id.length > 0 && Number.isFinite(task.lastActiveAt)
     ? {
         id: task.id,
         name: typeof task.name === 'string' ? task.name : '',
-        lastUsedAt: task.lastUsedAt
+        lastActiveAt: task.lastActiveAt
       }
     : null;
 
@@ -353,6 +361,14 @@ async function runLastTask() {
   } finally {
     isRunningTask = false;
     await refreshLauncherState();
+  }
+}
+
+async function reloadTab() {
+  try {
+    await browser.runtime.sendMessage({ type: 'RELOAD_TAB' });
+  } catch (e) {
+    console.warn('Failed to reload tab:', e);
   }
 }
 

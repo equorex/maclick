@@ -515,7 +515,13 @@ async function handleEditTask(event) {
   const defaultTimeout = readDefaultTimeout();
   const steps = editingSteps.map(step => ({ ...step }));
 
-  const updated = await taskStorage.update(currentEditingTaskId, { name, description, defaultTimeout, steps });
+  const updated = await taskStorage.update(currentEditingTaskId, {
+    name,
+    description,
+    defaultTimeout,
+    steps,
+    lastActiveAt: Date.now()
+  });
 
   currentEditingTaskId = null;
   editingSteps = [];
@@ -657,17 +663,17 @@ async function renderTaskList() {
   if (!list) return;
 
   const tasks = await taskStorage.getAll();
-  renderLastUsed(tasks);
+  renderLastTask(tasks);
   renderTasks(filterTasks(tasks, effectiveFilter(), currentHost), tasks.length > 0);
 }
 
-function renderLastUsed(tasks) {
-  const section = document.getElementById('last-used-section');
-  const container = document.getElementById('last-used-task');
+function renderLastTask(tasks) {
+  const section = document.getElementById('last-task-section');
+  const container = document.getElementById('last-task');
   if (!section || !container) return;
 
   const scoped = currentHost ? tasks.filter(task => task.host === currentHost) : [];
-  const task = pickLastUsed(scoped);
+  const task = pickLastTask(scoped);
   container.textContent = '';
 
   if (!task) {
@@ -784,7 +790,7 @@ async function ensureTaskForCurrentHost(task, tasks) {
     description: task.description || '',
     defaultTimeout: task.defaultTimeout || TASK_DEFAULT_TIMEOUT,
     createdAt: Date.now(),
-    lastUsedAt: Date.now(),
+    lastActiveAt: Date.now(),
     sourceId: rootId,
     steps: Array.isArray(task.steps) ? task.steps.map(step => ({ ...step })) : []
   };
@@ -816,9 +822,11 @@ async function runTask(taskId) {
   const isForeign = task.host !== currentHost;
 
   try {
-    const { task: runnable, copied } = await ensureTaskForCurrentHost(task, tasks);
-
-    if (!copied) await taskStorage.update(runnable.id, { lastUsedAt: Date.now() });
+    const ensured = await ensureTaskForCurrentHost(task, tasks);
+    const copied = ensured.copied;
+    const runnable = copied
+      ? ensured.task
+      : (await taskStorage.update(ensured.task.id, { lastActiveAt: Date.now() })) || ensured.task;
 
     await browser.scripting.executeScript({
       target: { tabId: tab.id },

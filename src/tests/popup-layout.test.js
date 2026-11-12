@@ -40,6 +40,8 @@ assertContains(':root', '--accent');
 assertContains(':root', '--surface');
 assertContains(':root', '--border');
 assert.ok(css.includes('@media (prefers-color-scheme: dark)'), 'dark theme media query present');
+assert.ok(html.includes('<h3 class="section-title">Last task</h3>'), 'last task section named');
+assert.ok(!html.includes('Last used'), 'old last used title removed');
 
 const fixedWidths = [...css.matchAll(/(?:^|[;{\s])width:\s*(\d+)px/g)].map(match => Number(match[1]));
 assert.ok(fixedWidths.length > 0, 'fixed widths found in popup.html');

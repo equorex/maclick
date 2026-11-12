@@ -23,6 +23,8 @@ const sentToTabs = [];
 const actionCalls = [];
 const executions = [];
 let executionError = null;
+let reloadError = null;
+const reloadCalls = [];
 const tabsById = {
   1: { id: 1, url: 'https://example.com/page' },
   3: { id: 3, url: 'https://esc.example/' },
@@ -67,6 +69,10 @@ const browser = {
     },
     async get(tabId) {
       return tabsById[tabId] || null;
+    },
+    async reload(tabId) {
+      reloadCalls.push(tabId);
+      if (reloadError) throw new Error(reloadError);
     },
     onRemoved: { addListener(fn) { removedListener = fn; } }
   },
@@ -127,6 +133,8 @@ vm.runInContext(fs.readFileSync(path.join(jsDir, 'background.js'), 'utf8'), cont
   assert.strictEqual(res.task.defaultTimeout, 300, 'defaultTimeout set');
   assert.strictEqual(res.task.steps.length, 3, 'task holds page load wait plus recorded steps');
   assert.strictEqual(res.task.steps[0].type, 'wait_page_load', 'wait_page_load is the first step');
+  assert.ok(Number.isFinite(res.task.lastActiveAt), 'recorded task becomes the last task');
+  assert.strictEqual(res.task.lastActiveAt, res.task.createdAt, 'recording is created with activity time');
   assert.strictEqual((localStore.maclick_tasks || []).length, 1, 'task persisted');
   eq(sentToTabs.at(-1), { tabId: 1, message: { type: 'STOP_RECORDING' } }, 'stop forwarded');
   assert.strictEqual(badgeTextFor(1), '', 'badge cleared on stop');
@@ -176,19 +184,28 @@ vm.runInContext(fs.readFileSync(path.join(jsDir, 'background.js'), 'utf8'), cont
   const startError = await listener({ type: 'START_RECORDING' }, popup);
   assert.strictEqual(startError.status, 'error');
 
-  localStore.maclick_tasks = [
-    ...localStore.maclick_tasks,
+  const launcherTasks = [
     { id: 'old', name: 'Older', host: 'launcher.example', lastUsedAt: 10, steps: [] },
-    { id: 'new', name: 'Newest', host: 'launcher.example', lastUsedAt: 20, steps: [] },
-    { id: 'other', name: 'Other host', host: 'other.example', lastUsedAt: 30, steps: [] },
-    { id: 'string-date', name: 'String date', host: 'launcher.example', lastUsedAt: '999', steps: [] }
+    { id: 'created', name: 'Created', host: 'launcher.example', createdAt: 15, steps: [] },
+    { id: 'new', name: 'Newest', host: 'launcher.example', lastActiveAt: 20, steps: [] },
+    { id: 'other', name: 'Other host', host: 'other.example', lastActiveAt: 30, steps: [] },
+    { id: 'string-date', name: 'String date', host: 'launcher.example', lastActiveAt: '999', steps: [] }
   ];
+  localStore.maclick_tasks = [...localStore.maclick_tasks, ...launcherTasks];
 
   res = await listener({ type: 'GET_LAUNCHER_STATE' }, contentSender(8));
-  eq(res, { task: { id: 'new', name: 'Newest', lastUsedAt: 20 } }, 'last used task selected for host');
+  eq(res, { task: { id: 'new', name: 'Newest', lastActiveAt: 20 } }, 'last activity task selected for host');
+
+  localStore.maclick_tasks = [
+    { id: 'legacy-used', name: 'Legacy used', host: 'launcher.example', lastUsedAt: 5 },
+    { id: 'legacy-created', name: 'Legacy created', host: 'launcher.example', createdAt: 6 }
+  ];
+  res = await listener({ type: 'GET_LAUNCHER_STATE' }, contentSender(8));
+  eq(res, { task: { id: 'legacy-created', name: 'Legacy created', lastActiveAt: 6 } }, 'legacy task dates are used');
+  localStore.maclick_tasks = [...localStore.maclick_tasks, ...launcherTasks];
 
   res = await listener({ type: 'GET_LAUNCHER_STATE' }, contentSender(1));
-  eq(res, { task: null }, 'never used tasks are not offered');
+  eq(res, { task: null }, 'no task for host');
 
   res = await listener({ type: 'GET_LAUNCHER_STATE' }, contentSender(9));
   eq(res, { task: null }, 'no launcher task for an empty host');
@@ -201,7 +218,7 @@ vm.runInContext(fs.readFileSync(path.join(jsDir, 'background.js'), 'utf8'), cont
 
   executions.length = 0;
   res = await listener({ type: 'RUN_LAST_TASK', taskId: 'old' }, contentSender(8));
-  eq(res, { status: 'stale', task: { id: 'new', name: 'Newest', lastUsedAt: 20 } }, 'stale task rejected');
+  eq(res, { status: 'stale', task: { id: 'new', name: 'Newest', lastActiveAt: 20 } }, 'stale task rejected');
   assert.strictEqual(executions.length, 0, 'stale task is not executed');
 
   res = await listener({ type: 'RUN_LAST_TASK' }, contentSender(8));
@@ -215,7 +232,7 @@ vm.runInContext(fs.readFileSync(path.join(jsDir, 'background.js'), 'utf8'), cont
   assert.strictEqual(executions[0].target.tabId, 8, 'executed in the requesting tab');
   assert.strictEqual(executions[0].args[0].id, 'new', 'last task passed to executor');
   assert.strictEqual(typeof executions[0].func, 'function', 'executor function injected');
-  assert.ok(localStore.maclick_tasks.find(task => task.id === 'new').lastUsedAt > 20, 'lastUsedAt updated on run');
+  assert.ok(localStore.maclick_tasks.find(task => task.id === 'new').lastActiveAt > 20, 'lastActiveAt updated on run');
 
   executions.length = 0;
   res = await listener({ type: 'RUN_LAST_TASK', taskId: 'new' }, contentSender(9));
@@ -227,6 +244,19 @@ vm.runInContext(fs.readFileSync(path.join(jsDir, 'background.js'), 'utf8'), cont
 
   res = await listener({ type: 'RUN_LAST_TASK', taskId: 'new' }, popup);
   eq(res, { status: 'error', error: 'Unknown tab' }, 'run requires a tab');
+
+  reloadCalls.length = 0;
+  res = await listener({ type: 'RELOAD_TAB' }, contentSender(1));
+  eq(res, { status: 'reloaded' }, 'tab reload requested');
+  eq(reloadCalls, [1], 'requesting tab is reloaded');
+
+  res = await listener({ type: 'RELOAD_TAB' }, popup);
+  eq(res, { status: 'error', error: 'Unknown tab' }, 'reload requires a tab');
+
+  reloadError = 'blocked';
+  res = await listener({ type: 'RELOAD_TAB' }, contentSender(1));
+  eq(res, { status: 'error', error: 'blocked' }, 'reload error reported');
+  reloadError = null;
 
   executionError = 'boom';
   res = await listener({ type: 'RUN_LAST_TASK', taskId: 'new' }, contentSender(8));

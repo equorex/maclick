@@ -170,10 +170,10 @@
 
     .section-title { margin: 0; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); }
 
-    .last-used-section,
+    .last-task-section,
     .tasks-section { margin-top: 14px; }
-    .last-used-section[hidden] { display: none; }
-    .last-used-section .section-title { margin-bottom: 8px; }
+    .last-task-section[hidden] { display: none; }
+    .last-task-section .section-title { margin-bottom: 8px; }
 
     .tasks-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
 
@@ -333,9 +333,9 @@
       <button id="record-btn" type="button" class="btn-record">Record</button>
     </section>
 
-    <section id="last-used-section" class="last-used-section" hidden>
-      <h3 class="section-title">Last used</h3>
-      <div id="last-used-task"></div>
+    <section id="last-task-section" class="last-task-section" hidden>
+      <h3 class="section-title">Last task</h3>
+      <div id="last-task"></div>
     </section>
 
     <section class="tasks-section">

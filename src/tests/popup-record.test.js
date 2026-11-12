@@ -42,7 +42,7 @@ function createElement(tag) {
 
 const jsDir = path.join(__dirname, '..', 'js');
 const popupSource = fs.readFileSync(path.join(__dirname, '..', 'popup.js'), 'utf8') +
-  '\nglobalThis.__t = { toggleRecord, renderTaskList, renderLastUsed, renderTasks, editTask, handleEditTask, cancelEdit, deleteTask, runTask, reorderSteps, filterTasks, pickLastUsed, selectDomainFilter, updateDomainFilterUi, hasHostAccess, updatePermissionBanner, requestHostAccess,' +
+  '\nglobalThis.__t = { toggleRecord, renderTaskList, renderLastTask, renderTasks, editTask, handleEditTask, cancelEdit, deleteTask, runTask, reorderSteps, filterTasks, pickLastTask, selectDomainFilter, updateDomainFilterUi, hasHostAccess, updatePermissionBanner, requestHostAccess,' +
   ' editor: editorRefs,' +
   ' get currentEditingTaskId() { return currentEditingTaskId; },' +
   ' get isRecording() { return isRecording; }, set isRecording(v) { isRecording = v; },' +
@@ -63,8 +63,8 @@ function createHarness(options = {}) {
     'record-btn': createElement('button'),
     'status-message': createElement('div'),
     'task-list': createElement('div'),
-    'last-used-section': createElement('section'),
-    'last-used-task': createElement('div'),
+    'last-task-section': createElement('section'),
+    'last-task': createElement('div'),
     'domain-filter': filterGroup,
     'permission-banner': createElement('div'),
     'grant-permission-btn': createElement('button')
@@ -210,7 +210,7 @@ function createHarness(options = {}) {
   assert.strictEqual(emptyList.children[0].tagName, 'P', 'empty state is a paragraph');
   assert.strictEqual(emptyList.children[0].className, 'empty-list', 'empty state class');
   assert.strictEqual(emptyList.children[0].textContent, 'No saved tasks', 'empty state text');
-  assert.strictEqual(emptyHarness.elements['last-used-section'].hidden, true, 'last used hidden without usage');
+  assert.strictEqual(emptyHarness.elements['last-task-section'].hidden, true, 'last task hidden without tasks');
 
   const rendering = createHarness({
     tasks: [{
@@ -260,51 +260,64 @@ function createHarness(options = {}) {
   await described.context.__t.renderTaskList();
   assert.strictEqual(described.elements['task-list'].children[0].children.length, 2, 'no description element without text');
 
-  const lastUsed = createHarness({
+  const lastTask = createHarness({
     tasks: [
-      { id: 'a', name: 'Older', host: 'example.com', createdAt: Date.now(), lastUsedAt: 10 },
-      { id: 'b', name: 'Newer', host: 'example.com', createdAt: Date.now(), lastUsedAt: 20 }
+      { id: 'a', name: 'Older', host: 'example.com', createdAt: 1000, lastUsedAt: 2000 },
+      { id: 'b', name: 'Newer', host: 'example.com', createdAt: 1500, lastActiveAt: 3000 }
     ]
   });
-  lastUsed.context.__t.currentHost = 'example.com';
-  await lastUsed.context.__t.renderTaskList();
+  lastTask.context.__t.currentHost = 'example.com';
+  await lastTask.context.__t.renderTaskList();
 
-  assert.strictEqual(lastUsed.elements['last-used-section'].hidden, false, 'last used section shown');
-  const recent = lastUsed.elements['last-used-task'].children[0];
+  assert.strictEqual(lastTask.elements['last-task-section'].hidden, false, 'last task section shown');
+  const recent = lastTask.elements['last-task'].children[0];
   assert.strictEqual(recent.className, 'task-card is-recent', 'recent card class');
-  assert.strictEqual(recent.children[0].children[0].textContent, 'Newer', 'most recent task picked');
+  assert.strictEqual(recent.children[0].children[0].textContent, 'Newer', 'task with latest activity picked');
   assert.deepStrictEqual(
     recent.children[0].children[1].children.map(button => button.getAttribute('aria-label')),
     ['Run', 'Edit'],
     'recent card has run and edit only'
   );
 
+  const freshTask = createHarness({
+    tasks: [{ id: 'fresh', name: 'Fresh', host: 'example.com', createdAt: 4000 }]
+  });
+  freshTask.context.__t.currentHost = 'example.com';
+  await freshTask.context.__t.renderTaskList();
+  assert.strictEqual(freshTask.elements['last-task-section'].hidden, false, 'new task shown without usage');
+  assert.strictEqual(freshTask.elements['last-task'].children[0].children[0].children[0].textContent, 'Fresh', 'newest created task picked');
+
   const otherDomain = createHarness({
-    tasks: [{ id: 'a', name: 'Other', host: 'other.com', createdAt: Date.now(), lastUsedAt: 10 }]
+    tasks: [{ id: 'a', name: 'Other', host: 'other.com', createdAt: Date.now(), lastActiveAt: 10 }]
   });
   otherDomain.context.__t.currentHost = 'example.com';
   await otherDomain.context.__t.renderTaskList();
-  assert.strictEqual(otherDomain.elements['last-used-section'].hidden, true, 'last used ignores other domains');
+  assert.strictEqual(otherDomain.elements['last-task-section'].hidden, true, 'last task ignores other domains');
 
-  const noHostLastUsed = createHarness({
-    tasks: [{ id: 'a', name: 'Any', host: 'example.com', createdAt: Date.now(), lastUsedAt: 10 }]
+  const noHostLastTask = createHarness({
+    tasks: [{ id: 'a', name: 'Any', host: 'example.com', createdAt: Date.now(), lastActiveAt: 10 }]
   });
-  noHostLastUsed.context.__t.currentHost = '';
-  await noHostLastUsed.context.__t.renderTaskList();
-  assert.strictEqual(noHostLastUsed.elements['last-used-section'].hidden, true, 'last used hidden without current domain');
+  noHostLastTask.context.__t.currentHost = '';
+  await noHostLastTask.context.__t.renderTaskList();
+  assert.strictEqual(noHostLastTask.elements['last-task-section'].hidden, true, 'last task hidden without current domain');
 
-  assert.strictEqual(lastUsed.context.__t.pickLastUsed([]), null, 'no last used without tasks');
-  assert.strictEqual(lastUsed.context.__t.pickLastUsed([{ id: 'x' }]), null, 'tasks without lastUsedAt ignored');
+  assert.strictEqual(lastTask.context.__t.pickLastTask([]), null, 'no last task without tasks');
+  assert.strictEqual(lastTask.context.__t.pickLastTask([{ id: 'x' }]), null, 'tasks without dates ignored');
   assert.strictEqual(
-    lastUsed.context.__t.pickLastUsed([{ id: 'x', lastUsedAt: 5 }, { id: 'y', lastUsedAt: 9 }]).id,
+    lastTask.context.__t.pickLastTask([{ id: 'x', lastActiveAt: 5 }, { id: 'y', lastActiveAt: 9 }]).id,
     'y',
-    'newest usage wins'
+    'newest activity wins'
+  );
+  assert.strictEqual(
+    lastTask.context.__t.pickLastTask([{ id: 'x', createdAt: 10 }, { id: 'y', lastActiveAt: 11 }]).id,
+    'y',
+    'activity overrides creation time'
   );
 
   const filterSource = [{ id: '1', host: 'a.com' }, { id: '2', host: 'b.com' }];
-  assert.deepStrictEqual(lastUsed.context.__t.filterTasks(filterSource, 'all', 'a.com').map(t => t.id), ['1', '2'], 'all filter');
-  assert.deepStrictEqual(lastUsed.context.__t.filterTasks(filterSource, 'domain', 'a.com').map(t => t.id), ['1'], 'domain filter');
-  assert.deepStrictEqual(lastUsed.context.__t.filterTasks(filterSource, 'domain', '').map(t => t.id), ['1', '2'], 'empty host falls back to all');
+  assert.deepStrictEqual(lastTask.context.__t.filterTasks(filterSource, 'all', 'a.com').map(t => t.id), ['1', '2'], 'all filter');
+  assert.deepStrictEqual(lastTask.context.__t.filterTasks(filterSource, 'domain', 'a.com').map(t => t.id), ['1'], 'domain filter');
+  assert.deepStrictEqual(lastTask.context.__t.filterTasks(filterSource, 'domain', '').map(t => t.id), ['1', '2'], 'empty host falls back to all');
 
   const filtered = createHarness({
     url: 'https://example.com/page',
@@ -346,6 +359,7 @@ function createHarness(options = {}) {
   const editing = createHarness({
     tasks: [{ id: 't1', name: 'Old', host: 'example.com', createdAt: Date.now(), steps: [{ type: 'click', selector: '#a' }] }]
   });
+  editing.context.__t.currentHost = 'example.com';
   await editing.context.__t.editTask('t1');
 
   assert.strictEqual(editing.context.__t.currentEditingTaskId, 't1', 'task marked as editing');
@@ -361,8 +375,10 @@ function createHarness(options = {}) {
 
   assert.strictEqual(editing.context.__t.currentEditingTaskId, null, 'editing cleared after save');
   assert.strictEqual(editing.state.tasks[0].name, 'New name', 'task saved in storage');
+  assert.ok(Number.isFinite(editing.state.tasks[0].lastActiveAt), 'saved task becomes the last task');
   assert.strictEqual(editing.elements['task-list'].children[0].className, 'task-card', 'card back to summary');
   assert.ok(editing.elements['status-message'].textContent.includes('saved'), 'save status shown');
+  assert.strictEqual(editing.elements['last-task-section'].hidden, false, 'saved task shown as last task');
 
   await editing.context.__t.editTask('t1');
   await editing.context.__t.cancelEdit();
@@ -376,10 +392,10 @@ function createHarness(options = {}) {
   await running.context.__t.runTask('t1');
 
   assert.strictEqual(running.state.executed, true, 'task executed');
-  assert.ok(Number.isFinite(running.state.tasks[0].lastUsedAt), 'lastUsedAt recorded on run');
-  assert.ok(Number.isFinite(running.state.executedTasks[0].lastUsedAt), 'lastUsedAt recorded before execution');
-  assert.strictEqual(running.elements['last-used-section'].hidden, false, 'last used section appears after run');
-  assert.strictEqual(running.elements['last-used-task'].children.length, 1, 'last used card rendered');
+  assert.ok(Number.isFinite(running.state.tasks[0].lastActiveAt), 'lastActiveAt recorded on run');
+  assert.ok(Number.isFinite(running.state.executedTasks[0].lastActiveAt), 'lastActiveAt passed to executor');
+  assert.strictEqual(running.elements['last-task-section'].hidden, false, 'last task section appears after run');
+  assert.strictEqual(running.elements['last-task'].children.length, 1, 'last task card rendered');
 
   const withAccess = createHarness();
   assert.strictEqual(await withAccess.context.__t.hasHostAccess(), true, 'host access detected');
@@ -451,11 +467,11 @@ function createHarness(options = {}) {
   assert.strictEqual(copy.name, 'Login', 'copy keeps name');
   assert.strictEqual(copy.defaultTimeout, 500, 'copy keeps default timeout');
   assert.deepStrictEqual(JSON.parse(JSON.stringify(copy.steps)), [{ type: 'click', selector: '#a' }], 'copy keeps steps');
-  assert.ok(Number.isFinite(copy.lastUsedAt), 'copy marked as used');
+  assert.ok(Number.isFinite(copy.lastActiveAt), 'copy marked as active');
   assert.strictEqual(foreign.context.__t.domainFilter, 'domain', 'filter reset to current domain');
   assert.strictEqual(foreign.state.prefs.maclick_domain_filter, 'domain', 'filter persisted');
-  assert.strictEqual(foreign.elements['last-used-section'].hidden, false, 'last used shown after copy');
-  assert.strictEqual(foreign.elements['last-used-task'].children[0].children[0].children[0].textContent, 'Login', 'last used is the copy');
+  assert.strictEqual(foreign.elements['last-task-section'].hidden, false, 'last task shown after copy');
+  assert.strictEqual(foreign.elements['last-task'].children[0].children[0].children[0].textContent, 'Login', 'last task is the copy');
   assert.strictEqual(foreign.elements['task-list'].children.length, 1, 'only current domain task listed');
 
   await foreign.context.__t.runTask('src');
@@ -470,7 +486,7 @@ function createHarness(options = {}) {
   await sameDomain.context.__t.runTask('t1');
   assert.strictEqual(sameDomain.state.tasks.length, 1, 'no copy for same domain');
   assert.strictEqual(sameDomain.context.__t.domainFilter, 'all', 'filter unchanged for same domain');
-  assert.ok(Number.isFinite(sameDomain.state.tasks[0].lastUsedAt), 'same domain marked as used');
+  assert.ok(Number.isFinite(sameDomain.state.tasks[0].lastActiveAt), 'same domain marked as active');
 
   console.log('popup record tests passed');
 })().catch(e => {

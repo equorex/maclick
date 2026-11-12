@@ -16,13 +16,28 @@
 
   globalThis.TASK_DEFAULT_TIMEOUT = 300;
 
-  globalThis.pickLastUsed = function (tasks) {
+  globalThis.taskActivityAt = function (task) {
+    if (!task) return NaN;
+
+    let best = NaN;
+    for (const value of [task.lastActiveAt, task.lastUsedAt, task.createdAt]) {
+      if (Number.isFinite(value) && (!Number.isFinite(best) || value > best)) best = value;
+    }
+    return best;
+  };
+
+  globalThis.pickLastTask = function (tasks) {
     if (!Array.isArray(tasks)) return null;
 
     let best = null;
+    let bestAt = NaN;
     for (const task of tasks) {
-      if (!task || !Number.isFinite(task.lastUsedAt)) continue;
-      if (!best || task.lastUsedAt > best.lastUsedAt) best = task;
+      const activityAt = taskActivityAt(task);
+      if (!Number.isFinite(activityAt)) continue;
+      if (!best || activityAt > bestAt) {
+        best = task;
+        bestAt = activityAt;
+      }
     }
     return best;
   };
