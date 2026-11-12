@@ -234,6 +234,21 @@ async function handleRecordingStopped(message, sender) {
   return { status: 'stopped', task: result.task, error: result.error };
 }
 
+async function handleCancelRecording(message, sender) {
+  const tabId = resolveTabId(message, sender);
+  if (tabId === null) return { status: 'error', error: 'Unknown tab' };
+
+  try {
+    await browser.tabs.sendMessage(tabId, { type: 'STOP_RECORDING' });
+  } catch (e) {
+    console.warn('Content script did not confirm cancel:', e);
+  }
+
+  await removeSession(tabId);
+  await clearRecordingIndicator(tabId);
+  return { status: 'cancelled' };
+}
+
 async function handleGetRecordingState(message, sender) {
   const tabId = resolveTabId(message, sender);
   if (tabId === null) return { recording: false };
@@ -277,6 +292,8 @@ async function handleMessage(message, sender) {
       return enqueue(() => handleRecordedStep(message, sender));
     case 'RECORDING_STOPPED':
       return enqueue(() => handleRecordingStopped(message, sender));
+    case 'CANCEL_RECORDING':
+      return enqueue(() => handleCancelRecording(message, sender));
     case 'GET_RECORDING_STATE':
       return enqueue(() => handleGetRecordingState(message, sender));
     case 'GET_LAUNCHER_STATE':

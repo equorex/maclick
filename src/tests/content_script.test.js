@@ -219,7 +219,10 @@ function createHarness(options = {}) {
 
   const panelBody = harness.overlay().shadowRoot.children[1];
   const stopButton = panelBody.children[0].children[3];
+  const cancelButton = panelBody.children[0].children[4];
   assert.strictEqual(stopButton.textContent, '⏹ Stop', 'stop button rendered');
+  assert.strictEqual(cancelButton.textContent, '✕ Cancel', 'cancel button rendered');
+  assert.strictEqual(cancelButton.getAttribute('aria-label'), 'Cancel recording', 'cancel button accessible label');
   assert.strictEqual(panelBody.children[1].hidden, true, 'actions hidden while recording');
 
   harness.state.sent.length = 0;
@@ -257,6 +260,23 @@ function createHarness(options = {}) {
   await harness.onMessage({ type: 'START_RECORDING' });
   await harness.onMessage({ type: 'STOP_RECORDING' });
   assert.strictEqual(harness.overlay(), null, 'overlay hidden on background stop');
+
+  const discardHarness = createHarness({ recording: true });
+  await delay(10);
+  const discardPanel = discardHarness.overlay();
+  const discardButton = discardPanel.shadowRoot.children[1].children[0].children[4];
+  discardHarness.state.sent.length = 0;
+  discardButton.dispatch('click');
+  assert.strictEqual(discardHarness.overlay(), null, 'overlay hidden after cancel button');
+  assert.strictEqual(discardHarness.state.sent.length, 1, 'cancel button sends a single message');
+  assert.strictEqual(discardHarness.state.sent[0].type, 'CANCEL_RECORDING', 'cancel button discards recording');
+
+  const discardTarget = createElement('button');
+  discardTarget.id = 'after-cancel';
+  discardHarness.document.documentElement.appendChild(discardTarget);
+  discardHarness.state.sent.length = 0;
+  discardHarness.docListeners.click[0]({ target: discardTarget, composedPath: () => [discardTarget] });
+  assert.strictEqual(discardHarness.state.sent.length, 0, 'clicks are not recorded after cancel');
 
   const restored = createHarness({ recording: true });
   await delay(10);

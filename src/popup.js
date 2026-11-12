@@ -71,6 +71,9 @@ document.addEventListener('DOMContentLoaded', () => {
   const recordBtn = document.getElementById('record-btn');
   if (recordBtn) recordBtn.addEventListener('click', toggleRecord);
 
+  const cancelRecordBtn = document.getElementById('cancel-record-btn');
+  if (cancelRecordBtn) cancelRecordBtn.addEventListener('click', cancelRecording);
+
   const grantBtn = document.getElementById('grant-permission-btn');
   if (grantBtn) grantBtn.addEventListener('click', requestHostAccess);
 
@@ -175,6 +178,9 @@ function updateRecordUi() {
   const recordBtn = document.getElementById('record-btn');
   if (recordBtn) recordBtn.textContent = isRecording ? 'Stop' : 'Record';
 
+  const cancelRecordBtn = document.getElementById('cancel-record-btn');
+  if (cancelRecordBtn) cancelRecordBtn.hidden = !isRecording;
+
   const hint = document.getElementById('record-hint');
   if (hint) hint.textContent = isRecording ? 'Recording…' : 'Idle';
 }
@@ -238,6 +244,32 @@ async function toggleRecord() {
     }
   } catch (e) {
     console.error(e);
+    showStatus('Error: ' + e.message, 'error');
+  }
+}
+
+async function cancelRecording() {
+  if (!isRecording) return;
+
+  try {
+    const tab = await getActiveTab();
+    if (!tab) {
+      showStatus('No active tab found', 'error');
+      return;
+    }
+
+    const result = await browser.runtime.sendMessage({ type: 'CANCEL_RECORDING', tabId: tab.id });
+
+    if (!result || result.status !== 'cancelled') {
+      showStatus('Failed to cancel recording: ' + ((result && result.error) || 'unknown error'), 'error');
+      return;
+    }
+
+    isRecording = false;
+    updateRecordUi();
+    showStatus('Recording cancelled', 'info');
+  } catch (e) {
+    console.error('Failed to cancel recording:', e);
     showStatus('Error: ' + e.message, 'error');
   }
 }

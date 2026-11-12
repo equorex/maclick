@@ -31,7 +31,8 @@ const tabsById = {
   5: { id: 5, url: 'https://race.example/' },
   7: { id: 7, url: 'about:preferences' },
   8: { id: 8, url: 'https://launcher.example/page' },
-  9: { id: 9, url: 'https://empty.example/' }
+  9: { id: 9, url: 'https://empty.example/' },
+  10: { id: 10, url: 'https://cancel.example/' }
 };
 
 const browser = {
@@ -183,6 +184,30 @@ vm.runInContext(fs.readFileSync(path.join(jsDir, 'background.js'), 'utf8'), cont
 
   const startError = await listener({ type: 'START_RECORDING' }, popup);
   assert.strictEqual(startError.status, 'error');
+
+  const taskCountBeforeCancel = (localStore.maclick_tasks || []).length;
+  res = await listener({ type: 'START_RECORDING', tabId: 10 }, popup);
+  assert.strictEqual(res.status, 'started', 'cancel flow recording started');
+  await listener({ type: 'RECORDED_STEP', step: { type: 'click', selector: '#discard' } }, contentSender(10));
+
+  res = await listener({ type: 'CANCEL_RECORDING' }, contentSender(10));
+  eq(res, { status: 'cancelled' }, 'recording cancelled');
+  eq(sentToTabs.at(-1), { tabId: 10, message: { type: 'STOP_RECORDING' } }, 'content script told to stop');
+  assert.strictEqual((localStore.maclick_tasks || []).length, taskCountBeforeCancel, 'cancelled recording is not saved');
+  assert.strictEqual(badgeTextFor(10), '', 'badge cleared on cancel');
+
+  res = await listener({ type: 'GET_RECORDING_STATE', tabId: 10 }, popup);
+  eq(res, { recording: false }, 'session dropped after cancel');
+
+  res = await listener({ type: 'RECORDED_STEP', step: { type: 'click', selector: '#late' } }, contentSender(10));
+  assert.strictEqual(res.status, 'ignored', 'late step ignored after cancel');
+
+  res = await listener({ type: 'STOP_RECORDING', tabId: 10 }, popup);
+  assert.strictEqual(res.task, null, 'nothing saved after cancel');
+  assert.strictEqual(res.error, 'empty', 'empty recording after cancel');
+
+  res = await listener({ type: 'CANCEL_RECORDING' }, popup);
+  eq(res, { status: 'error', error: 'Unknown tab' }, 'cancel requires a tab');
 
   const launcherTasks = [
     { id: 'old', name: 'Older', host: 'launcher.example', lastUsedAt: 10, steps: [] },

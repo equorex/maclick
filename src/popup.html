@@ -168,6 +168,18 @@
     body:has(.indicator.recording) .btn-record { background: var(--danger); }
     body:has(.indicator.recording) .btn-record:not(:disabled):hover { background: var(--danger-hover); }
 
+    .record-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+    .btn-cancel-record {
+      padding: 6px 12px;
+      background: var(--surface-2);
+      color: var(--text);
+      border-color: var(--border);
+      border-radius: var(--radius-pill);
+      font-weight: 600;
+    }
+    .btn-cancel-record[hidden] { display: none; }
+    .btn-cancel-record:not(:disabled):hover { background: var(--surface); border-color: var(--danger); color: var(--danger); }
+
     .section-title { margin: 0; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); }
 
     .last-task-section,
@@ -330,7 +342,10 @@
           <div id="record-hint" class="record-hint">Idle</div>
         </div>
       </div>
-      <button id="record-btn" type="button" class="btn-record">Record</button>
+      <div class="record-actions">
+        <button id="record-btn" type="button" class="btn-record">Record</button>
+        <button id="cancel-record-btn" type="button" class="btn-cancel-record" hidden>Cancel</button>
+      </div>
     </section>
 
     <section id="last-task-section" class="last-task-section" hidden>

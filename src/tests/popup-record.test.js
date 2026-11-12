@@ -42,7 +42,7 @@ function createElement(tag) {
 
 const jsDir = path.join(__dirname, '..', 'js');
 const popupSource = fs.readFileSync(path.join(__dirname, '..', 'popup.js'), 'utf8') +
-  '\nglobalThis.__t = { toggleRecord, renderTaskList, renderLastTask, renderTasks, editTask, handleEditTask, cancelEdit, deleteTask, runTask, reorderSteps, filterTasks, pickLastTask, selectDomainFilter, updateDomainFilterUi, hasHostAccess, updatePermissionBanner, requestHostAccess,' +
+  '\nglobalThis.__t = { toggleRecord, cancelRecording, renderTaskList, renderLastTask, renderTasks, editTask, handleEditTask, cancelEdit, deleteTask, runTask, reorderSteps, filterTasks, pickLastTask, selectDomainFilter, updateDomainFilterUi, updateRecordUi, hasHostAccess, updatePermissionBanner, requestHostAccess,' +
   ' editor: editorRefs,' +
   ' get currentEditingTaskId() { return currentEditingTaskId; },' +
   ' get isRecording() { return isRecording; }, set isRecording(v) { isRecording = v; },' +
@@ -61,6 +61,7 @@ function createHarness(options = {}) {
   const elements = {
     indicator: createElement('div'),
     'record-btn': createElement('button'),
+    'cancel-record-btn': createElement('button'),
     'status-message': createElement('div'),
     'task-list': createElement('div'),
     'last-task-section': createElement('section'),
@@ -165,6 +166,7 @@ function createHarness(options = {}) {
   );
   assert.strictEqual(started.state.closed, true, 'popup closed after successful start');
   assert.strictEqual(started.elements['record-btn'].textContent, 'Stop', 'button switched to stop');
+  assert.strictEqual(started.elements['cancel-record-btn'].hidden, false, 'cancel button shown while recording');
   assert.strictEqual(started.elements.indicator.classList.contains('recording'), true, 'indicator is recording');
 
   const failed = createHarness();
@@ -201,6 +203,41 @@ function createHarness(options = {}) {
   );
   assert.ok(stopped.elements['status-message'].textContent.includes('My task'), 'saved task message shown');
   assert.strictEqual(stopped.elements['record-btn'].textContent, 'Record', 'button switched to record');
+  assert.strictEqual(stopped.elements['cancel-record-btn'].hidden, true, 'cancel button hidden after stop');
+
+  const cancelled = createHarness();
+  cancelled.context.__t.isRecording = true;
+  cancelled.context.__t.updateRecordUi();
+  cancelled.state.responses.push({ status: 'cancelled' });
+  await cancelled.context.__t.cancelRecording();
+
+  assert.deepStrictEqual(
+    JSON.parse(JSON.stringify(cancelled.state.sent[0])),
+    { type: 'CANCEL_RECORDING', tabId: 42 },
+    'cancel message sent'
+  );
+  assert.strictEqual(cancelled.context.__t.isRecording, false, 'recording flag cleared on cancel');
+  assert.strictEqual(cancelled.elements['cancel-record-btn'].hidden, true, 'cancel button hidden after cancel');
+  assert.strictEqual(cancelled.elements['record-btn'].textContent, 'Record', 'button switched to record on cancel');
+  assert.ok(cancelled.elements['status-message'].textContent.includes('cancelled'), 'cancel status shown');
+
+  const cancelFailed = createHarness();
+  cancelFailed.context.__t.isRecording = true;
+  cancelFailed.context.__t.updateRecordUi();
+  cancelFailed.state.responses.push({ status: 'error', error: 'boom' });
+  await cancelFailed.context.__t.cancelRecording();
+
+  assert.strictEqual(cancelFailed.context.__t.isRecording, true, 'recording stays active when cancel fails');
+  assert.strictEqual(cancelFailed.elements['cancel-record-btn'].hidden, false, 'cancel button stays visible on failure');
+  assert.ok(cancelFailed.elements['status-message'].textContent.includes('boom'), 'cancel error shown');
+
+  const cancelNoTab = createHarness({ noActiveTab: true });
+  cancelNoTab.context.__t.isRecording = true;
+  await cancelNoTab.context.__t.cancelRecording();
+
+  assert.strictEqual(cancelNoTab.state.sent.length, 0, 'nothing sent without active tab on cancel');
+  assert.ok(cancelNoTab.elements['status-message'].textContent.includes('No active tab found'), 'cancel missing tab message');
+  assert.strictEqual(cancelNoTab.context.__t.isRecording, true, 'recording stays active without tab');
 
   const emptyHarness = createHarness();
   await emptyHarness.context.__t.renderTaskList();

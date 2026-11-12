@@ -47,6 +47,16 @@ const PANEL_CSS = `
     cursor: pointer;
   }
   .stop:hover { background: #c53030; }
+  .cancel {
+    padding: 4px 10px;
+    border: 1px solid rgba(255, 255, 255, 0.35);
+    border-radius: 999px;
+    background: transparent;
+    color: #ffffff;
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .cancel:hover { background: rgba(229, 62, 62, 0.25); border-color: #e53e3e; }
   .actions {
     display: flex;
     align-items: center;
@@ -210,10 +220,19 @@ function createRecordingSection() {
   stopButton.textContent = '⏹ Stop';
   stopButton.addEventListener('click', stopRecordingFromPage);
 
+  const cancelButton = document.createElement('button');
+  cancelButton.type = 'button';
+  cancelButton.className = 'cancel';
+  cancelButton.textContent = '✕ Cancel';
+  cancelButton.title = 'Cancel recording';
+  cancelButton.setAttribute('aria-label', 'Cancel recording');
+  cancelButton.addEventListener('click', cancelRecordingFromPage);
+
   section.appendChild(dot);
   section.appendChild(text);
   section.appendChild(hint);
   section.appendChild(stopButton);
+  section.appendChild(cancelButton);
   return section;
 }
 
@@ -388,6 +407,14 @@ function stopRecordingFromPage() {
   isRecording = false;
   renderPanel();
   sendMessage({ type: 'RECORDING_STOPPED' });
+}
+
+function cancelRecordingFromPage() {
+  if (!isRecording) return;
+
+  isRecording = false;
+  renderPanel();
+  sendMessage({ type: 'CANCEL_RECORDING' });
 }
 
 function isPanelEvent(e) {
